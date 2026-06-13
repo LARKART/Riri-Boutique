@@ -1,0 +1,26 @@
+{
+  "sourceCurrency": "CAD",
+  "sourcePrice": 93.31,
+  "productType": "Dress",
+  "isDress": true,
+  "name": "Serane",
+  "group": "Wedding Guest Dresses",
+  "attributes": {
+    "neckline": "One Shoulder",
+    "occasion": "Wedding Guest",
+    "length": "Maxi",
+    "material": "Satin"
+  },
+  "colors": ["Black", "Emerald"],
+  "sizes": ["S", "M", "L"],
+  "images": [
+    { "src": "https://supplier.example.com/serane-black-1.jpg", "color": "Black", "position": 1, "main": true },
+    { "src": "https://supplier.example.com/serane-black-2.jpg", "color": "Black", "position": 2 },
+    { "src": "https://supplier.example.com/serane-emerald-1.jpg", "color": "Emerald", "position": 3 }
+  ],
+  "descriptionInput": {
+    "fit": "true to size, fitted bodice with a flowing skirt",
+    "fabricFeel": "smooth satin with a soft drape",
+    "styling": "pairs with heeled sandals and gold jewellery"
+  }
+}

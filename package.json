@@ -3,8 +3,11 @@
   "version": "0.0.1",
   "private": true,
   "description": "Shopify product listing automation for Riri Boutique",
+  "type": "module",
   "scripts": {
-    "test:auth": "node --env-file=.env test-auth.js"
+    "test:auth": "node --env-file=.env test-auth.js",
+    "verify:transforms": "node scripts/verify-transforms.js",
+    "validate:input": "node scripts/validate-input.js"
   },
   "engines": {
     "node": ">=20.6.0"
