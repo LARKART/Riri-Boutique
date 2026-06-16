@@ -23,6 +23,22 @@ const results = await runPipelineFromUrl(url, {
   map: { sourceCurrency: 'CAD' },
 });
 
+// Cross-batch name dedup (spec §14.3): ensure invented names are unique per run.
+const NAME_POOL = ['Serane', 'Elowen', 'Marielle', 'Avora', 'Celina', 'Evadra', 'Lirelle',
+  'Noemi', 'Calla', 'Vesper', 'Ondine', 'Amaris', 'Sorrel', 'Thalia', 'Maren'];
+const used = new Set();
+for (const r of results) {
+  let name = r.draft.name;
+  if (used.has(String(name).toLowerCase())) {
+    const alt = NAME_POOL.find((n) => !used.has(n.toLowerCase())) || `${name}-${used.size}`;
+    r.notes.push(`Renamed "${name}" -> "${alt}" to keep names unique (§14.3).`);
+    name = alt;
+    r.draft.name = name;
+    r.draft.title = `${r.draft.title.split(' | ')[0]} | ${name}`; // recompute (core unchanged)
+  }
+  used.add(String(name).toLowerCase());
+}
+
 console.log(`Scraped & built ${results.length} draft(s).\n`);
 results.forEach((r, idx) => {
   console.log(`--- product ${idx + 1} ---`);
