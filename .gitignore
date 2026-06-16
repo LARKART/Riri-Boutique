@@ -6,3 +6,6 @@
 # Node
 node_modules/
 npm-debug.log*
+
+# Pilot run logs (may contain store/product IDs)
+logs/
