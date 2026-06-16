@@ -93,8 +93,16 @@ Pilot/rollback need `.env` loaded (`--env-file=.env`).
 
 - **Identity guard:** every write asserts `shop.myshopifyDomain` ==
   `SHOPIFY_EXPECTED_MYSHOPIFY_DOMAIN`; fail-closed.
-- **Image rights (spec §9.3/§17):** scraped/competitor images are quarantined,
-  not published, unless rights are confirmed (`trustImages:true`).
+- **Image rights (spec §9.3/§17):** scraped images are quarantined by default
+  and not published unless rights are confirmed (`trustImages:true`).
+  - **Approved supplier sources (owner-confirmed exception).** The store owner
+    has attested that the storefront URLs they provide are their own **suppliers**
+    with images permitted for resale listings — which satisfies the spec's
+    "supplier-origin / manually approved by the owner" path. For these sources,
+    images may be treated as approved (run with `map.trustImages:true`) and skip
+    the quarantine. This exception rests on the owner's rights attestation; it
+    does **not** apply to arbitrary/unverified URLs, which stay quarantined.
+    - Confirmed approved sources: `juliaandanne.com`.
 - **Original content (spec §5.2/§10):** names/descriptions are generated, never
   copied from competitors.
 - **Pilot before bulk (spec §14.1/§15):** validate 3–5 products first.
