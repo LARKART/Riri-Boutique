@@ -13,14 +13,15 @@ import { buildProductSetOperation } from '../src/shopify/payload-builder.js';
 
 const url = process.argv[2];
 const limit = Number(process.argv[3] || 3);
-if (!url) { console.error('Usage: node --env-file=.env scripts/run-from-url.js <url> [limit]'); process.exit(2); }
+const trustImages = process.argv.includes('trust'); // owner-confirmed supplier source
+if (!url) { console.error('Usage: node --env-file=.env scripts/run-from-url.js <url> [limit] [trust]'); process.exit(2); }
 
-console.log(`→ Stage 0 scrape (writes OFF, limit ${limit}): ${url}\n`);
+console.log(`→ Stage 0 scrape (writes OFF, limit ${limit}, trustImages=${trustImages}): ${url}\n`);
 
 const results = await runPipelineFromUrl(url, {
   limit,
   scrape: { actorInput: { startUrls: [{ url }], maxItems: limit } },
-  map: { sourceCurrency: 'CAD' },
+  map: { sourceCurrency: 'CAD', trustImages },
 });
 
 // Cross-batch name dedup (spec §14.3): ensure invented names are unique per run.
