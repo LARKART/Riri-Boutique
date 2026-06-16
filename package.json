@@ -10,7 +10,8 @@
     "validate:input": "node scripts/validate-input.js",
     "demo:images": "node scripts/demo-images.js",
     "dry-run": "node scripts/dry-run.js",
-    "demo:apify": "node scripts/demo-apify-map.js"
+    "demo:apify": "node scripts/demo-apify-map.js",
+    "run:url": "node --env-file=.env scripts/run-from-url.js"
   },
   "engines": {
     "node": ">=20.6.0"
