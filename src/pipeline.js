@@ -19,6 +19,9 @@ import { buildVariants } from './normalize/variants.js';
 import { resolveCategory } from './transform/taxonomy.js';
 import { buildFeedMetafields } from './transform/feed.js';
 import { processImages } from './images/process.js';
+import { executeProductSet } from './shopify/execute.js';
+import { ensureCollection, addProductsToCollection } from './shopify/collections.js';
+import { publishToSalesChannels } from './shopify/publish.js';
 
 /**
  * Build the canonical ProductDraft for one input product.
@@ -89,6 +92,39 @@ export async function buildProductDraft(input, deps = {}) {
       warnings: [...inputWarnings, ...images.warnings],
     },
   };
+}
+
+/**
+ * Post-creation finalize (lifecycle Stages 11 + 12): verify/create the group's
+ * collection, assign the product, and optionally publish to sales channels.
+ * The identity guard runs once (inside ensureCollection); later calls skip it.
+ * @param {string} productId gid://shopify/Product/...
+ * @param {object} draft canonical ProductDraft (uses draft.collection.title)
+ * @param {{publish?: boolean}} [opts] publish=false by default (broadcast is opt-in)
+ */
+export async function finalizeProduct(productId, draft, opts = {}) {
+  // Stage 11 — collection verify/create + assign.
+  const collection = await ensureCollection(draft.collection.title);
+  const assignJob = await addProductsToCollection(collection.id, [productId], { skipGuard: true });
+
+  // Stage 12 — optional broadcast to Online Store + Google sales channels.
+  let publish = null;
+  if (opts.publish) publish = await publishToSalesChannels(productId);
+
+  return { collection, assignJob, publish };
+}
+
+/**
+ * Full single-product run: build -> execute (DRAFT) -> finalize.
+ * Publishing is opt-in (default off) so an unapproved product is never broadcast.
+ * @param {object} input hand-authored product JSON
+ * @param {{status?: 'DRAFT'|'ACTIVE', publish?: boolean, deps?: object}} [opts]
+ */
+export async function runProduct(input, opts = {}) {
+  const draft = await buildProductDraft(input, opts.deps || {});
+  const exec = await executeProductSet(draft, { status: opts.status || 'DRAFT' });
+  const finalized = await finalizeProduct(exec.product.id, draft, { publish: !!opts.publish });
+  return { draft, ...exec, ...finalized };
 }
 
 export { titleCore };
