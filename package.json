@@ -8,7 +8,8 @@
     "test:auth": "node --env-file=.env test-auth.js",
     "verify:transforms": "node scripts/verify-transforms.js",
     "validate:input": "node scripts/validate-input.js",
-    "demo:images": "node scripts/demo-images.js"
+    "demo:images": "node scripts/demo-images.js",
+    "dry-run": "node scripts/dry-run.js"
   },
   "engines": {
     "node": ">=20.6.0"
