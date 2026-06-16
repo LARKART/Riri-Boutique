@@ -9,12 +9,14 @@
     "verify:transforms": "node scripts/verify-transforms.js",
     "validate:input": "node scripts/validate-input.js",
     "demo:images": "node scripts/demo-images.js",
-    "dry-run": "node scripts/dry-run.js"
+    "dry-run": "node scripts/dry-run.js",
+    "demo:apify": "node scripts/demo-apify-map.js"
   },
   "engines": {
     "node": ">=20.6.0"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.104.2"
+    "@anthropic-ai/sdk": "^0.104.2",
+    "apify-client": "^2.23.4"
   }
 }

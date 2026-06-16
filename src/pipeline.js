@@ -127,4 +127,43 @@ export async function runProduct(input, opts = {}) {
   return { draft, ...exec, ...finalized };
 }
 
+/**
+ * Stage 0 entry: scrape a URL, map each scraped product into our input contract,
+ * and run it through the existing ingest pipeline (buildProductDraft).
+ *
+ * Writes are OFF by default — this returns drafts for review. Pass execute:true
+ * to also create products (Stage 10 + finalize). Scraped images are quarantined
+ * unless map.trustImages is set (spec §9.3/§17).
+ *
+ * @param {string} url target URL (structural reference)
+ * @param {object} [opts]
+ * @param {object} [opts.scrape] options forwarded to scrapeProducts
+ * @param {object} [opts.map]    options forwarded to mapApifyToInput
+ * @param {object} [opts.deps]   injected deps for buildProductDraft
+ * @param {boolean} [opts.execute=false] also create + finalize each product
+ * @param {number}  [opts.limit] cap how many scraped products to process
+ * @returns {Promise<Array<{input, draft, unverifiedImages, notes, execution?}>>}
+ */
+export async function runPipelineFromUrl(url, opts = {}) {
+  // Dynamic import keeps apify-client out of the offline script paths.
+  const { scrapeProducts } = await import('./scrape/apify.js');
+  const { mapApifyToInput } = await import('./transform/apifyToInput.js');
+
+  const { items } = await scrapeProducts(url, opts.scrape || {});
+  const slice = opts.limit ? items.slice(0, opts.limit) : items;
+
+  const results = [];
+  for (const raw of slice) {
+    const { input, unverifiedImages, notes } = mapApifyToInput(raw, { referenceUrl: url, ...(opts.map || {}) });
+    const draft = await buildProductDraft(input, opts.deps || {});
+    const entry = { input, draft, unverifiedImages, notes };
+    if (opts.execute) {
+      const exec = await executeProductSet(draft, { status: opts.status || 'DRAFT' });
+      entry.execution = { ...exec, ...(await finalizeProduct(exec.product.id, draft, { publish: !!opts.publish })) };
+    }
+    results.push(entry);
+  }
+  return results;
+}
+
 export { titleCore };
