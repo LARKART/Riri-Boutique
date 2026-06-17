@@ -33,14 +33,14 @@ mutation ProductSetExecute($input: ProductSetInput!, $synchronous: Boolean) {
 /**
  * Execute productSet behind the identity guard.
  * @param {object} draft canonical ProductDraft
- * @param {{status?: 'DRAFT'|'ACTIVE', synchronous?: boolean}} [opts]
+ * @param {{status?: 'DRAFT'|'ACTIVE', synchronous?: boolean, collectionId?: string}} [opts]
  * @returns {Promise<{shop, product, variants}>}
  */
 export async function executeProductSet(draft, opts = {}) {
   // Stage 3 — refuse to write unless we're on the expected store.
   const shop = await assertStoreIdentity();
 
-  const input = buildProductSetInput(draft, { status: opts.status || 'DRAFT' });
+  const input = buildProductSetInput(draft, { status: opts.status || 'DRAFT', collectionId: opts.collectionId });
   const variables = { input, synchronous: opts.synchronous ?? true };
 
   const data = await shopifyGraphQL(PRODUCT_SET_EXECUTE_MUTATION, variables);

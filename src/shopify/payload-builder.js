@@ -41,7 +41,7 @@ function money(n) {
 /**
  * Build the ProductSetInput from a ProductDraft.
  * @param {object} draft canonical draft from buildProductDraft()
- * @param {{status?: 'DRAFT'|'ACTIVE', vendor?: string}} [opts]
+ * @param {{status?: 'DRAFT'|'ACTIVE', vendor?: string, collectionId?: string}} [opts]
  * @returns {object} ProductSetInput
  */
 export function buildProductSetInput(draft, opts = {}) {
@@ -95,6 +95,13 @@ export function buildProductSetInput(draft, opts = {}) {
   }
   if (files.length) input.files = files;
   if (draft.feedMetafields?.length) input.metafields = draft.feedMetafields;
+
+  // Collection routing (spec 11): tag the product with the collection name for
+  // smart-sorting/filtering, and assign direct membership when the collection
+  // ID is known (created/verified up front by the orchestrator).
+  const collectionTag = draft.collection?.title;
+  if (collectionTag) input.tags = [collectionTag];
+  if (opts.collectionId) input.collections = [opts.collectionId];
 
   return input;
 }

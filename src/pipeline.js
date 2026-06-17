@@ -12,6 +12,7 @@
 
 'use strict';
 
+import { pathToFileURL } from 'node:url';
 import { validateProductInput } from './validate/input.js';
 import { generateContent as defaultGenerate } from './content/generate.js';
 import { buildTitle, titleCore } from './transform/title.js';
@@ -102,11 +103,12 @@ export async function buildProductDraft(input, deps = {}) {
  * The identity guard runs once (inside ensureCollection); later calls skip it.
  * @param {string} productId gid://shopify/Product/...
  * @param {object} draft canonical ProductDraft (uses draft.collection.title)
- * @param {{publish?: boolean}} [opts] publish=false by default (broadcast is opt-in)
+ * @param {{publish?: boolean, collection?: {id,title}}} [opts] publish=false by
+ *   default; pass a pre-resolved `collection` to skip the verify/create round-trip.
  */
 export async function finalizeProduct(productId, draft, opts = {}) {
-  // Stage 11 — collection verify/create + assign.
-  const collection = await ensureCollection(draft.collection.title);
+  // Stage 11 — collection verify/create + assign (reuse pre-resolved if given).
+  const collection = opts.collection || await ensureCollection(draft.collection.title);
   const assignJob = await addProductsToCollection(collection.id, [productId], { skipGuard: true });
 
   // Stage 12 — optional broadcast to Online Store + Google sales channels.
@@ -117,15 +119,18 @@ export async function finalizeProduct(productId, draft, opts = {}) {
 }
 
 /**
- * Full single-product run: build -> execute (DRAFT) -> finalize.
+ * Full single-product run: build -> verify/create collection -> execute (DRAFT,
+ * routed into the collection) -> finalize.
  * Publishing is opt-in (default off) so an unapproved product is never broadcast.
  * @param {object} input hand-authored product JSON
- * @param {{status?: 'DRAFT'|'ACTIVE', publish?: boolean, deps?: object}} [opts]
+ * @param {{status?: 'DRAFT'|'ACTIVE', publish?: boolean, collection?: string, deps?: object}} [opts]
  */
 export async function runProduct(input, opts = {}) {
   const draft = await buildProductDraft(input, opts.deps || {});
-  const exec = await executeProductSet(draft, { status: opts.status || 'DRAFT' });
-  const finalized = await finalizeProduct(exec.product.id, draft, { publish: !!opts.publish });
+  if (opts.collection) draft.collection.title = opts.collection; // dynamic routing override
+  const collection = await ensureCollection(draft.collection.title); // verify or create
+  const exec = await executeProductSet(draft, { status: opts.status || 'DRAFT', collectionId: collection.id });
+  const finalized = await finalizeProduct(exec.product.id, draft, { publish: !!opts.publish, collection });
   return { draft, ...exec, ...finalized };
 }
 
@@ -211,6 +216,7 @@ export async function runPipelineFromUrl(url, opts = {}) {
       }
       const { input, unverifiedImages, notes } = mapApifyToInput(raw, mapOpts);
       const draft = await buildProductDraft(input, opts.deps || {});
+      if (opts.collection) draft.collection.title = opts.collection; // dynamic routing override
       results.push({ input, draft, unverifiedImages, notes });
     } catch (err) {
       results.push({ raw: { title: raw.title, handle: raw.handle }, notes: [], buildError: err.message });
@@ -223,11 +229,17 @@ export async function runPipelineFromUrl(url, opts = {}) {
   // Phase 3 — optional execution. Resilient: per-product try/catch so one
   // failure doesn't abort the rest; created IDs and errors are both captured.
   if (opts.execute) {
+    const collCache = new Map(); // verify/create each collection once per batch
+    const resolveCollection = async (name) => {
+      if (!collCache.has(name)) collCache.set(name, await ensureCollection(name));
+      return collCache.get(name);
+    };
     for (const r of results) {
       if (!r.draft) continue;
       try {
-        const exec = await executeProductSet(r.draft, { status: opts.status || 'DRAFT' });
-        r.execution = { ...exec, ...(await finalizeProduct(exec.product.id, r.draft, { publish: !!opts.publish })) };
+        const collection = await resolveCollection(r.draft.collection.title);
+        const exec = await executeProductSet(r.draft, { status: opts.status || 'DRAFT', collectionId: collection.id });
+        r.execution = { ...exec, ...(await finalizeProduct(exec.product.id, r.draft, { publish: !!opts.publish, collection })) };
       } catch (err) {
         r.execError = err.message;
       }
@@ -237,3 +249,63 @@ export async function runPipelineFromUrl(url, opts = {}) {
 }
 
 export { titleCore };
+
+// ---------------------------------------------------------------------------
+// CLI: node src/pipeline.js --url "<URL>" [--collection "Name"] [--limit N]
+//                           [--execute] [--publish]
+// Writes are OFF unless --execute is passed (dry-run gate). Images use the
+// standing supplier attestation (trustImages). --collection routes all products
+// into the named collection (verified or created on the fly).
+// ---------------------------------------------------------------------------
+function parseArgs(argv) {
+  const out = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a.startsWith('--')) continue;
+    const key = a.slice(2);
+    const next = argv[i + 1];
+    if (next && !next.startsWith('--')) { out[key] = next; i++; } else { out[key] = true; }
+  }
+  return out;
+}
+
+async function main() {
+  const a = parseArgs(process.argv.slice(2));
+  if (!a.url) {
+    console.error('Usage: node src/pipeline.js --url "<URL>" [--collection "Name"] [--limit N] [--execute] [--publish]');
+    process.exit(2);
+  }
+  const collection = typeof a.collection === 'string' ? a.collection : undefined;
+  const limit = a.limit ? Number(a.limit) : undefined;
+  const execute = !!a.execute;
+
+  console.log(`→ pipeline --url ${a.url}${collection ? ` --collection "${collection}"` : ''}` +
+    `${limit ? ` --limit ${limit}` : ''} | ${execute ? 'EXECUTE (writes)' : 'DRY-RUN (no writes)'}`);
+
+  const results = await runPipelineFromUrl(a.url, {
+    collection,
+    limit,
+    execute,
+    publish: !!a.publish,
+    status: 'DRAFT',
+    scrape: { actorInput: { startUrls: [{ url: a.url }], ...(limit ? { maxItems: limit } : {}) } },
+    map: { trustImages: true }, // standing owner supplier attestation (see CLAUDE.md)
+  });
+
+  for (const r of results) {
+    if (r.execution?.product) {
+      console.log(`✅ ${r.draft.title} -> ${r.execution.product.id} [collection: ${r.execution.collection?.title}]`);
+    } else if (r.execError) {
+      console.log(`❌ ${r.draft?.title || r.raw?.title || '?'}: ${r.execError}`);
+    } else if (r.buildError) {
+      console.log(`❌ ${r.raw?.title || '?'}: ${r.buildError}`);
+    } else if (r.draft) {
+      console.log(`• (dry-run) ${r.draft.title} -> collection "${r.draft.collection.title}"`);
+    }
+  }
+  if (!execute) console.log('\n🔶 DRY-RUN GATE: no writes. Re-run with --execute to create products.');
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+  main().catch((err) => { console.error(err.message); process.exit(1); });
+}

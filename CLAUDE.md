@@ -70,9 +70,23 @@ logs/                               # gitignored run logs (created product IDs)
 - `finalizeProduct(productId, draft, { publish })` — Stage 11 collection
   assign + optional Stage 12 publish (publish off by default).
 - `runProduct(input, { status, publish, deps })` — build → execute → finalize.
-- `runPipelineFromUrl(url, { scrape, map, deps, execute, limit })` — Stage 0
-  scrape → ingest. Writes off unless `execute:true`. Scraped images are
-  quarantined unless `map.trustImages:true`.
+- `runPipelineFromUrl(url, { scrape, map, deps, execute, limit, collection })` —
+  Stage 0 scrape → ingest. Writes off unless `execute:true`. Scraped images are
+  quarantined unless `map.trustImages:true`. `collection` (name) dynamically
+  routes every product into that collection, verified-or-created on the fly.
+- `runProduct(input, { collection, ... })` accepts the same `collection` override.
+
+## Dynamic collection routing
+
+Pass a collection name and the pipeline verifies it exists (or creates it via
+`collectionCreate`, BEST_SELLING) before writing, assigns each product's
+membership in the `productSet` payload (`collections: [id]`), and tags the
+product with the collection name for smart-sorting/filtering. Without an
+override, the per-product `group` is used.
+
+```
+node src/pipeline.js --url "<URL>" --collection "Dresses" --execute
+```
 
 ## Commands
 
@@ -84,6 +98,7 @@ logs/                               # gitignored run logs (created product IDs)
 | `npm run demo:images` | Offline image QA + variant mapping demo | none |
 | `npm run demo:apify` | Offline Stage 0 transformer/scraper demo (mocked) | none |
 | `npm run dry-run` | Build payload + local pre-flight QA (no execution) | none |
+| `node --env-file=.env src/pipeline.js --url "<URL>" [--collection "Name"] [--limit N] [--execute] [--publish]` | Stage 0 → ingest with dynamic collection routing; dry-run unless `--execute` | none / **WRITE** |
 | `node --env-file=.env scripts/pilot-run.js [input.json]` | Create ONE DRAFT product end-to-end | **WRITE** |
 | `node --env-file=.env scripts/rollback.js <product-gid>` | Delete a product | **WRITE** |
 
@@ -132,7 +147,9 @@ before any store mutation.
    creates ONE DRAFT behind the identity guard; capture the product ID + admin
    link; IDs logged to `logs/`.
 8. **Review** — user inspects the DRAFT in Shopify admin.
-9. **Collections** — verify/create the group collection and assign.
+9. **Collections** — verify/create the target collection and assign. Routing is
+   automatic: the per-product `group`, or a `--collection "Name"` override that
+   applies to the whole run (created on the fly if missing, BEST_SELLING).
 10. **Publish (opt-in, after approval)** — `publishablePublish` to Online Store
     (+ Google once that channel is installed).
 11. **Rollback if rejected** — `node --env-file=.env scripts/rollback.js <gid>`.
