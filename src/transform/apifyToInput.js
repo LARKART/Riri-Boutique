@@ -107,7 +107,10 @@ export function mapApifyToInput(raw, opts = {}) {
     throw new Error('mapApifyToInput: could not derive a positive sourcePrice.');
   }
 
-  // Per-variant price overrides (preserve real per-combo prices).
+  // Per-variant price overrides (preserve real per-combo SOURCE prices). These
+  // are raw supplier cost; the FINAL selling price for every variant is charm-
+  // snapped (ends in 4.95/9.95) downstream by pricing.sellingPrice -> charmPrice,
+  // applied after FX + markup in buildVariants. Do NOT charm-snap source cost here.
   const variantOverrides = [];
   if (cls.colorIdx >= 0 && cls.sizeIdx >= 0) {
     const colorKey = `option${cls.colorIdx + 1}`, sizeKey = `option${cls.sizeIdx + 1}`;

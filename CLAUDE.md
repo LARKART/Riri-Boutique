@@ -41,7 +41,7 @@ src/
   scrape/apify.js                   # Stage 0  Apify scraper (structure only)
   transform/
     apifyToInput.js                 # Stage 0  raw scrape -> input contract
-    pricing.js                      # .95 selling / .00 compare-at
+    pricing.js                      # charm selling (X4.95/X9.95) / .00 compare-at
     sku.js                          # RIRI-CODE-COLOR-SIZE
     title.js                        # keyword-first title + colorless alt core
     taxonomy.js                     # dress -> aa-1-4 / dynamic lookup
@@ -87,6 +87,21 @@ override, the per-product `group` is used.
 ```
 node src/pipeline.js --url "<URL>" --collection "Dresses" --execute
 ```
+
+## Pricing rules
+
+- **Strict charm pricing (overrides spec §5.3 plain `.95`):** every final selling
+  price must end in **4.95 or 9.95**. `pricing.charmPrice()` rounds the computed
+  price to the nearest whole dollar, then to the nearest dollar ending in 4 or 9
+  (the two `.95` boundaries in each 10-dollar band), and adds `.95`. Floor is
+  `4.95`. Examples: `93.31→94.95`, `80.00→79.95`, `104.10→104.95`, `82→84.95`.
+- Enforced centrally in `pricing.sellingPrice()` (which delegates to
+  `charmPrice`), so **every** variant — Apify-scraped or hand-authored — complies
+  after FX + markup. Do not charm-snap raw source cost in `apifyToInput.js`;
+  snapping happens only on the final price in `buildVariants`.
+- **Compare-at** is unchanged: `selling / (1 − discount)`, discount 40–60% per
+  product, rounded to a whole number ending in `.00`, always `>` selling.
+- Future iterations MUST preserve the X4.95/X9.95 rule (see `verify:transforms`).
 
 ## Commands
 

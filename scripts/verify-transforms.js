@@ -19,11 +19,16 @@ function check(label, actual, expected) {
   ok ? pass++ : fail++;
 }
 
-console.log('\n§5.3 Selling price (floor + .95)');
-check('93.31  -> 93.95', sellingPrice(93.31), 93.95);
+console.log('\n§5.3 Selling price (strict charm: snaps to X4.95 / X9.95)');
+check('93.31  -> 94.95', sellingPrice(93.31), 94.95);
 check('104.10 -> 104.95', sellingPrice(104.10), 104.95);
 check('79.99  -> 79.95', sellingPrice(79.99), 79.95);
-check('80.00  -> 80.95', sellingPrice(80.00), 80.95);
+check('80.00  -> 79.95', sellingPrice(80.00), 79.95);
+check('82.00  -> 84.95', sellingPrice(82.00), 84.95);
+check('87.00  -> 89.95', sellingPrice(87.00), 89.95);
+check('2.00   -> 4.95 (floor)', sellingPrice(2.00), 4.95);
+check('all dollar parts end in 4 or 9',
+  [93.31, 104.1, 79.99, 80, 82, 87, 125.49, 150.2].every((p) => [4, 9].includes(Math.floor(sellingPrice(p)) % 10)), true);
 
 console.log('\n§5.4 Compare-at price (selling / (1 - discount), ends in .00)');
 check('99.95 @50% -> 200.00', compareAtPrice(99.95, 0.50), 200.00);
