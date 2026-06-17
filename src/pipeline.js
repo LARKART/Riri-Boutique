@@ -89,7 +89,7 @@ export async function buildProductDraft(input, deps = {}) {
     qa: {
       titleCore: titleCore(draft),
       rejectedImages: images.rejected,
-      warnings: [...inputWarnings, ...images.warnings],
+      warnings: dedupeWarnings([...inputWarnings, ...images.warnings]),
     },
   };
 }
@@ -125,6 +125,21 @@ export async function runProduct(input, opts = {}) {
   const exec = await executeProductSet(draft, { status: opts.status || 'DRAFT' });
   const finalized = await finalizeProduct(exec.product.id, draft, { publish: !!opts.publish });
   return { draft, ...exec, ...finalized };
+}
+
+/**
+ * Collapse near-duplicate warnings. The input validator and the image processor
+ * can both flag the same per-color image gap with different wording/casing
+ * ("no mapped image" lowercased vs "no approved image" original-case); normalize
+ * so each distinct issue is reported once.
+ */
+function dedupeWarnings(warnings) {
+  const seen = new Map();
+  for (const w of warnings) {
+    const key = w.toLowerCase().replace(/has no (mapped|approved) image/, 'has no image');
+    if (!seen.has(key)) seen.set(key, w);
+  }
+  return [...seen.values()];
 }
 
 /**
