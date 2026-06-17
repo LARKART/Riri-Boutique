@@ -144,6 +144,28 @@ function dedupeWarnings(warnings) {
   return [...seen.values()];
 }
 
+/** Brand-style fallback names for cross-batch dedup (spec §14.3). */
+const NAME_POOL = ['Serane', 'Elowen', 'Marielle', 'Avora', 'Celina', 'Evadra', 'Lirelle',
+  'Noemi', 'Calla', 'Vesper', 'Ondine', 'Amaris', 'Sorrel', 'Thalia', 'Maren', 'Linnea',
+  'Cosette', 'Delphine', 'Isolde', 'Rhea', 'Mirabel', 'Yvaine', 'Solene', 'Anouk'];
+
+/** Ensure invented product names are unique within a batch; fixes titles too. */
+function dedupeNames(entries) {
+  const used = new Set();
+  for (const r of entries) {
+    if (!r.draft) continue;
+    let name = r.draft.name;
+    if (used.has(String(name).toLowerCase())) {
+      const alt = NAME_POOL.find((n) => !used.has(n.toLowerCase())) || `${name}-${used.size}`;
+      r.notes.push(`Renamed "${name}" -> "${alt}" for uniqueness (§14.3).`);
+      name = alt;
+      r.draft.name = name;
+      r.draft.title = `${r.draft.title.split(' | ')[0]} | ${name}`;
+    }
+    used.add(String(name).toLowerCase());
+  }
+}
+
 /**
  * Stage 0 entry: scrape a URL, map each scraped product into our input contract,
  * and run it through the existing ingest pipeline (buildProductDraft).
@@ -169,32 +191,47 @@ export async function runPipelineFromUrl(url, opts = {}) {
   const { items } = await scrapeProducts(url, opts.scrape || {});
   const slice = opts.limit ? items.slice(0, opts.limit) : items;
 
-  // When images are trusted, enrich from the source products.json for per-color
-  // linkage (the actor strips image_id/variant_ids).
   const wantLinkage = !!(opts.map && opts.map.trustImages);
   let origin = null;
   try { origin = new URL(url).origin; } catch { /* non-URL input */ }
 
+  // Phase 1 — build all drafts (NO writes). Resilient: a failed product is
+  // recorded as buildError and skipped, not fatal to the batch (spec §15).
   const results = [];
   for (const raw of slice) {
-    let linkage = null;
-    if (wantLinkage && origin && raw.handle) {
-      try { linkage = await fetchShopifyProductJson(origin, raw.handle); }
-      catch { /* fall back to gallery-only images */ }
+    try {
+      let linkage = null;
+      if (wantLinkage && origin && raw.handle) {
+        try { linkage = await fetchShopifyProductJson(origin, raw.handle); }
+        catch { /* fall back to gallery-only images */ }
+      }
+      const mapOpts = { referenceUrl: url, ...(opts.map || {}), linkage };
+      if (!mapOpts.sourceCurrency && linkage?.variants?.[0]?.price_currency) {
+        mapOpts.sourceCurrency = linkage.variants[0].price_currency;
+      }
+      const { input, unverifiedImages, notes } = mapApifyToInput(raw, mapOpts);
+      const draft = await buildProductDraft(input, opts.deps || {});
+      results.push({ input, draft, unverifiedImages, notes });
+    } catch (err) {
+      results.push({ raw: { title: raw.title, handle: raw.handle }, notes: [], buildError: err.message });
     }
-    const mapOpts = { referenceUrl: url, ...(opts.map || {}), linkage };
-    // Authoritative source currency from linkage (spec §13) unless caller forced one.
-    if (!mapOpts.sourceCurrency && linkage?.variants?.[0]?.price_currency) {
-      mapOpts.sourceCurrency = linkage.variants[0].price_currency;
+  }
+
+  // Phase 2 — unique invented names across the batch (spec §14.3).
+  dedupeNames(results);
+
+  // Phase 3 — optional execution. Resilient: per-product try/catch so one
+  // failure doesn't abort the rest; created IDs and errors are both captured.
+  if (opts.execute) {
+    for (const r of results) {
+      if (!r.draft) continue;
+      try {
+        const exec = await executeProductSet(r.draft, { status: opts.status || 'DRAFT' });
+        r.execution = { ...exec, ...(await finalizeProduct(exec.product.id, r.draft, { publish: !!opts.publish })) };
+      } catch (err) {
+        r.execError = err.message;
+      }
     }
-    const { input, unverifiedImages, notes } = mapApifyToInput(raw, mapOpts);
-    const draft = await buildProductDraft(input, opts.deps || {});
-    const entry = { input, draft, unverifiedImages, notes };
-    if (opts.execute) {
-      const exec = await executeProductSet(draft, { status: opts.status || 'DRAFT' });
-      entry.execution = { ...exec, ...(await finalizeProduct(exec.product.id, draft, { publish: !!opts.publish })) };
-    }
-    results.push(entry);
   }
   return results;
 }
