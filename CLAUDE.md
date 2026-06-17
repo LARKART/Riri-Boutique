@@ -95,14 +95,17 @@ Pilot/rollback need `.env` loaded (`--env-file=.env`).
   `SHOPIFY_EXPECTED_MYSHOPIFY_DOMAIN`; fail-closed.
 - **Image rights (spec §9.3/§17):** scraped images are quarantined by default
   and not published unless rights are confirmed (`trustImages:true`).
-  - **Approved supplier sources (owner-confirmed exception).** The store owner
-    has attested that the storefront URLs they provide are their own **suppliers**
-    with images permitted for resale listings — which satisfies the spec's
-    "supplier-origin / manually approved by the owner" path. For these sources,
-    images may be treated as approved (run with `map.trustImages:true`) and skip
-    the quarantine. This exception rests on the owner's rights attestation; it
-    does **not** apply to arbitrary/unverified URLs, which stay quarantined.
-    - Confirmed approved sources: `juliaandanne.com`.
+  - **Standing owner attestation (supplier sources).** The store owner has
+    declared that **any storefront URL they input is one of their own suppliers**,
+    with images permitted for resale listings — satisfying the spec's
+    "supplier-origin / manually approved by the owner" path. Therefore, for
+    owner-provided storefront URLs, run with `map.trustImages:true` so images are
+    treated as approved and skip the quarantine (the default for
+    `runPipelineFromUrl` / `bulk-from-url` / `pilot-from-url`).
+  - This blanket approval rests entirely on the owner's rights attestation and is
+    their legal responsibility. It applies to **owner-provided storefront URLs**;
+    arbitrary/unverified image URLs from other contexts still stay quarantined.
+    - Example confirmed source: `juliaandanne.com`.
 - **Original content (spec §5.2/§10):** names/descriptions are generated, never
   copied from competitors.
 - **Pilot before bulk (spec §14.1/§15):** validate 3–5 products first.
