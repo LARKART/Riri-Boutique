@@ -161,15 +161,26 @@ function dedupeWarnings(warnings) {
  */
 export async function runPipelineFromUrl(url, opts = {}) {
   // Dynamic import keeps apify-client out of the offline script paths.
-  const { scrapeProducts } = await import('./scrape/apify.js');
+  const { scrapeProducts, fetchShopifyProductJson } = await import('./scrape/apify.js');
   const { mapApifyToInput } = await import('./transform/apifyToInput.js');
 
   const { items } = await scrapeProducts(url, opts.scrape || {});
   const slice = opts.limit ? items.slice(0, opts.limit) : items;
 
+  // When images are trusted, enrich from the source products.json for per-color
+  // linkage (the actor strips image_id/variant_ids).
+  const wantLinkage = !!(opts.map && opts.map.trustImages);
+  let origin = null;
+  try { origin = new URL(url).origin; } catch { /* non-URL input */ }
+
   const results = [];
   for (const raw of slice) {
-    const { input, unverifiedImages, notes } = mapApifyToInput(raw, { referenceUrl: url, ...(opts.map || {}) });
+    let linkage = null;
+    if (wantLinkage && origin && raw.handle) {
+      try { linkage = await fetchShopifyProductJson(origin, raw.handle); }
+      catch { /* fall back to gallery-only images */ }
+    }
+    const { input, unverifiedImages, notes } = mapApifyToInput(raw, { referenceUrl: url, ...(opts.map || {}), linkage });
     const draft = await buildProductDraft(input, opts.deps || {});
     const entry = { input, draft, unverifiedImages, notes };
     if (opts.execute) {

@@ -45,3 +45,20 @@ export async function scrapeProducts(targetUrl, opts = {}) {
   const { items } = await client.dataset(run.defaultDatasetId).listItems();
   return { items: items || [], runId: run.id, datasetId: run.defaultDatasetId };
 }
+
+/**
+ * Fetch the authoritative Shopify products.json for one product. The Apify actor
+ * strips image<->variant linkage (no image_id / variant_ids); this raw source
+ * retains it, enabling per-color variant image mapping (spec §9.1/§14.2).
+ * @param {string} origin e.g. "https://juliaandanne.com"
+ * @param {string} handle product handle
+ * @returns {Promise<object>} the raw Shopify product (variants+images+options)
+ */
+export async function fetchShopifyProductJson(origin, handle) {
+  const u = `${String(origin).replace(/\/$/, '')}/products/${handle}.json`;
+  const res = await fetch(u);
+  if (!res.ok) throw new Error(`products.json fetch failed (HTTP ${res.status}) for ${handle}`);
+  const body = await res.json();
+  if (!body?.product) throw new Error(`products.json had no product for ${handle}`);
+  return body.product;
+}

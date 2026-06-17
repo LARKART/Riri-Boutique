@@ -55,6 +55,31 @@ function classifyOptions(variants) {
   };
 }
 
+/**
+ * Build per-color image list from an authoritative Shopify product (products.json),
+ * which carries images[].variant_ids and variants[].option* — enabling each image
+ * to be tagged with its color (spec §9.1/§14.2).
+ */
+function imagesFromLinkage(linkage) {
+  const options = linkage.options || [];
+  const colorOpt = options.find((o) => /colou?r/i.test(o?.name || ''));
+  const colorPos = colorOpt?.position || 1; // 1-based option index
+  const variantColor = new Map();
+  for (const v of linkage.variants || []) variantColor.set(v.id, v[`option${colorPos}`]);
+
+  const imgs = (linkage.images || []).slice().sort((a, b) => (a.position ?? 1) - (b.position ?? 1));
+  return imgs.map((im, i) => {
+    const colorsForImg = new Set((im.variant_ids || []).map((id) => variantColor.get(id)).filter(Boolean));
+    const color = colorsForImg.size === 1 ? [...colorsForImg][0] : null; // one color -> tag it; else gallery
+    return {
+      src: im.src,
+      position: im.position ?? i + 1,
+      ...(color ? { color } : {}),
+      ...(i === 0 ? { main: true } : {}),
+    };
+  }).filter((im) => /^https?:\/\//.test(im.src || ''));
+}
+
 export function mapApifyToInput(raw, opts = {}) {
   const { sourceCurrency, group, referenceUrl, trustImages = false } = opts;
   const notes = [];
@@ -130,9 +155,14 @@ export function mapApifyToInput(raw, opts = {}) {
     .map((im, i) => ({ src: im.src || im.url || im, position: im.position ?? i + 1 }))
     .filter((im) => typeof im.src === 'string' && /^https?:\/\//.test(im.src));
   let unverifiedImages = [];
-  if (trustImages && scraped.length) {
+  if (trustImages && opts.linkage) {
+    // Preferred: per-color images from authoritative source linkage (§9.1/§14.2).
+    input.images = imagesFromLinkage(opts.linkage);
+    const mapped = input.images.filter((im) => im.color).length;
+    notes.push(`trustImages=true: ${input.images.length} image(s) from source linkage, ${mapped} color-tagged (spec §9.1/§14.2).`);
+  } else if (trustImages && scraped.length) {
     input.images = scraped.map((im, i) => ({ ...im, ...(i === 0 ? { main: true } : {}) }));
-    notes.push('trustImages=true: scraped images placed into approved images[] — confirm rights (spec §9.3/§17).');
+    notes.push('trustImages=true: gallery images only (no per-color linkage available); confirm rights (spec §9.3/§17).');
   } else if (scraped.length) {
     unverifiedImages = scraped;
     notes.push(`${scraped.length} scraped image(s) QUARANTINED (not in images[]). Use trustImages:true only if licensed/owned/approved (spec §9.3/§17).`);
