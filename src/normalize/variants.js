@@ -8,6 +8,7 @@
 
 import { buildSku } from '../transform/sku.js';
 import { sellingPrice, compareAtPrice, discountFraction, round2 } from '../transform/pricing.js';
+import { convertPrice } from '../transform/currency.js';
 
 /** Normalize an option value list: trim, de-duplicate (case-insensitive), keep order. */
 export function normalizeOptionValues(values) {
@@ -28,9 +29,14 @@ export function normalizeOptionValues(values) {
  * Build the full variant matrix for a product draft.
  * @returns {Array<{color,size,sku,price,compareAtPrice}>}
  */
-export function buildVariants(draft) {
+export function buildVariants(draft, opts = {}) {
   const code = draft.productCode || draft.name;
   if (!code) throw new Error('Cannot build variants without name or productCode.');
+
+  // FX conversion before .95 rounding (spec §13). Without fx, prices are assumed
+  // to already be in store currency (back-compat for CAD inputs/tests).
+  const fx = opts.fx;
+  const toStore = (p) => (fx ? convertPrice(p, draft.sourceCurrency, fx) : p);
 
   const colors = normalizeOptionValues(draft.colors);
   const sizes = normalizeOptionValues(draft.sizes);
@@ -50,7 +56,7 @@ export function buildVariants(draft) {
   for (const color of colors) {
     for (const size of sizes) {
       const src = overrides.get(`${color.toLowerCase()}|${size.toLowerCase()}`) ?? draft.sourcePrice;
-      const selling = sellingPrice(src);
+      const selling = sellingPrice(toStore(src));
       variants.push({
         color,
         size,

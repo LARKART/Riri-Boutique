@@ -24,7 +24,7 @@ const results = await runPipelineFromUrl(url, {
   status: 'DRAFT',
   publish: false,
   scrape: { actorInput: { startUrls: [{ url }], maxItems: limit } },
-  map: { sourceCurrency: 'CAD', trustImages: true },
+  map: { trustImages: true },
 });
 
 mkdirSync('logs', { recursive: true });

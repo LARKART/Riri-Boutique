@@ -19,6 +19,7 @@ import { buildVariants } from './normalize/variants.js';
 import { resolveCategory } from './transform/taxonomy.js';
 import { buildFeedMetafields } from './transform/feed.js';
 import { processImages } from './images/process.js';
+import { buildFxFromEnv } from './transform/currency.js';
 import { executeProductSet } from './shopify/execute.js';
 import { ensureCollection, addProductsToCollection } from './shopify/collections.js';
 import { publishToSalesChannels } from './shopify/publish.js';
@@ -48,8 +49,9 @@ export async function buildProductDraft(input, deps = {}) {
   draft.name = draft.name || content.name; // keep an author-supplied name if present
 
   // Stage 5/4 — title (deterministic) + variant matrix (price/compareAt/SKU).
+  // FX conversion (spec §13) applies when source currency != store currency.
   const title = buildTitle(draft);
-  const variants = buildVariants(draft);
+  const variants = buildVariants(draft, { fx: deps.fx || buildFxFromEnv() });
 
   // Stage 5 — taxonomy + GMC feed fields.
   const category = await resolveCategory(draft, deps.gql);
@@ -180,7 +182,12 @@ export async function runPipelineFromUrl(url, opts = {}) {
       try { linkage = await fetchShopifyProductJson(origin, raw.handle); }
       catch { /* fall back to gallery-only images */ }
     }
-    const { input, unverifiedImages, notes } = mapApifyToInput(raw, { referenceUrl: url, ...(opts.map || {}), linkage });
+    const mapOpts = { referenceUrl: url, ...(opts.map || {}), linkage };
+    // Authoritative source currency from linkage (spec §13) unless caller forced one.
+    if (!mapOpts.sourceCurrency && linkage?.variants?.[0]?.price_currency) {
+      mapOpts.sourceCurrency = linkage.variants[0].price_currency;
+    }
+    const { input, unverifiedImages, notes } = mapApifyToInput(raw, mapOpts);
     const draft = await buildProductDraft(input, opts.deps || {});
     const entry = { input, draft, unverifiedImages, notes };
     if (opts.execute) {

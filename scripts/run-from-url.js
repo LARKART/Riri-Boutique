@@ -21,7 +21,7 @@ console.log(`→ Stage 0 scrape (writes OFF, limit ${limit}, trustImages=${trust
 const results = await runPipelineFromUrl(url, {
   limit,
   scrape: { actorInput: { startUrls: [{ url }], maxItems: limit } },
-  map: { sourceCurrency: 'CAD', trustImages },
+  map: { trustImages },
 });
 
 // Cross-batch name dedup (spec §14.3): ensure invented names are unique per run.

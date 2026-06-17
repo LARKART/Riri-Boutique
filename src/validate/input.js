@@ -55,7 +55,7 @@ export function validateProductInput(input) {
     if (!CURRENCIES.has(input.sourceCurrency)) {
       E(`sourceCurrency must be one of ${[...CURRENCIES].join(', ')}; got "${input.sourceCurrency}".`);
     } else if (input.sourceCurrency !== STORE_CURRENCY) {
-      W(`sourceCurrency is ${input.sourceCurrency} but store currency is ${STORE_CURRENCY}; FX conversion is required before .95 rounding (spec 13).`);
+      W(`sourceCurrency is ${input.sourceCurrency} (store is ${STORE_CURRENCY}); FX conversion applies before .95 rounding — verify the configured rate (spec 13).`);
     }
   }
   if ('sourcePrice' in input && !(typeof input.sourcePrice === 'number' && input.sourcePrice > 0)) {
