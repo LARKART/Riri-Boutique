@@ -62,3 +62,41 @@ export async function publishToSalesChannels(productId) {
   const result = await publishProduct(productId, matched.map((p) => p.id), { skipGuard: true });
   return { shop, channels: matched, ...result };
 }
+
+const VERIFY_PRODUCTS = `
+query VerifyProducts($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on Product {
+      id
+      title
+      status
+      publishedAt
+      resourcePublicationsCount { count }
+    }
+  }
+}`.trim();
+
+/**
+ * Read back live state for created products: status, publishedAt, and publication
+ * count. A product is "live" only when ACTIVE *and* on at least one publication
+ * (publishablePublish is a silent no-op while a product is DRAFT, so both must
+ * hold). Used to fail-loud after a publish run.
+ * @param {string[]} productIds gid://shopify/Product/...
+ * @returns {Promise<Array<{id,title,status,publishedAt,publicationCount,live}>>}
+ */
+export async function verifyPublished(productIds, { skipGuard = false } = {}) {
+  if (!skipGuard) await assertStoreIdentity();
+  if (!productIds?.length) return [];
+  const data = await shopifyGraphQL(VERIFY_PRODUCTS, { ids: productIds });
+  return (data.nodes || []).filter(Boolean).map((n) => {
+    const publicationCount = n.resourcePublicationsCount?.count ?? 0;
+    return {
+      id: n.id,
+      title: n.title,
+      status: n.status,
+      publishedAt: n.publishedAt,
+      publicationCount,
+      live: n.status === 'ACTIVE' && publicationCount >= 1 && !!n.publishedAt,
+    };
+  });
+}

@@ -23,7 +23,7 @@ import { processImages } from './images/process.js';
 import { buildFxFromEnv } from './transform/currency.js';
 import { executeProductSet } from './shopify/execute.js';
 import { ensureCollection, addProductsToCollection } from './shopify/collections.js';
-import { publishToSalesChannels } from './shopify/publish.js';
+import { publishToSalesChannels, verifyPublished } from './shopify/publish.js';
 
 /**
  * Build the canonical ProductDraft for one input product.
@@ -98,6 +98,17 @@ export async function buildProductDraft(input, deps = {}) {
 }
 
 /**
+ * Resolve the create status. Publishing implies ACTIVE: publishablePublish is a
+ * silent no-op on a DRAFT product, so a product that will be published must be
+ * created ACTIVE. An explicit opts.status always wins; otherwise default DRAFT.
+ * @param {{status?: 'DRAFT'|'ACTIVE', publish?: boolean}} opts
+ * @returns {'DRAFT'|'ACTIVE'}
+ */
+function resolveStatus(opts = {}) {
+  return opts.status || (opts.publish ? 'ACTIVE' : 'DRAFT');
+}
+
+/**
  * Post-creation finalize (lifecycle Stages 11 + 12): verify/create the group's
  * collection, assign the product, and optionally publish to sales channels.
  * The identity guard runs once (inside ensureCollection); later calls skip it.
@@ -112,6 +123,8 @@ export async function finalizeProduct(productId, draft, opts = {}) {
   const assignJob = await addProductsToCollection(collection.id, [productId], { skipGuard: true });
 
   // Stage 12 — optional broadcast to Online Store + Google sales channels.
+  // The caller must have created the product ACTIVE (see resolveStatus);
+  // publishablePublish silently no-ops on a DRAFT product.
   let publish = null;
   if (opts.publish) publish = await publishToSalesChannels(productId);
 
@@ -129,7 +142,7 @@ export async function runProduct(input, opts = {}) {
   const draft = await buildProductDraft(input, opts.deps || {});
   if (opts.collection) draft.collection.title = opts.collection; // dynamic routing override
   const collection = await ensureCollection(draft.collection.title); // verify or create
-  const exec = await executeProductSet(draft, { status: opts.status || 'DRAFT', collectionId: collection.id });
+  const exec = await executeProductSet(draft, { status: resolveStatus(opts), collectionId: collection.id });
   const finalized = await finalizeProduct(exec.product.id, draft, { publish: !!opts.publish, collection });
   return { draft, ...exec, ...finalized };
 }
@@ -185,6 +198,9 @@ function dedupeNames(entries) {
  * @param {object} [opts.map]    options forwarded to mapApifyToInput
  * @param {object} [opts.deps]   injected deps for buildProductDraft
  * @param {boolean} [opts.execute=false] also create + finalize each product
+ * @param {boolean} [opts.publish=false] publish each product (implies ACTIVE)
+ * @param {'DRAFT'|'ACTIVE'} [opts.status] explicit create status (overrides the
+ *   publish-implied default; see resolveStatus)
  * @param {number}  [opts.limit] cap how many scraped products to process
  * @returns {Promise<Array<{input, draft, unverifiedImages, notes, execution?}>>}
  */
@@ -229,6 +245,7 @@ export async function runPipelineFromUrl(url, opts = {}) {
   // Phase 3 — optional execution. Resilient: per-product try/catch so one
   // failure doesn't abort the rest; created IDs and errors are both captured.
   if (opts.execute) {
+    const status = resolveStatus(opts); // --publish implies ACTIVE
     const collCache = new Map(); // verify/create each collection once per batch
     const resolveCollection = async (name) => {
       if (!collCache.has(name)) collCache.set(name, await ensureCollection(name));
@@ -238,7 +255,7 @@ export async function runPipelineFromUrl(url, opts = {}) {
       if (!r.draft) continue;
       try {
         const collection = await resolveCollection(r.draft.collection.title);
-        const exec = await executeProductSet(r.draft, { status: opts.status || 'DRAFT', collectionId: collection.id });
+        const exec = await executeProductSet(r.draft, { status, collectionId: collection.id });
         r.execution = { ...exec, ...(await finalizeProduct(exec.product.id, r.draft, { publish: !!opts.publish, collection })) };
       } catch (err) {
         r.execError = err.message;
@@ -255,7 +272,9 @@ export { titleCore };
 //                           [--execute] [--publish]
 // Writes are OFF unless --execute is passed (dry-run gate). Images use the
 // standing supplier attestation (trustImages). --collection routes all products
-// into the named collection (verified or created on the fly).
+// into the named collection (verified or created on the fly). --publish creates
+// products ACTIVE and publishes them to the Online Store (+ any other installed
+// channels), then verifies each is live and exits non-zero if any is not.
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
   const out = {};
@@ -278,16 +297,17 @@ async function main() {
   const collection = typeof a.collection === 'string' ? a.collection : undefined;
   const limit = a.limit ? Number(a.limit) : undefined;
   const execute = !!a.execute;
+  const publish = !!a.publish;
 
   console.log(`→ pipeline --url ${a.url}${collection ? ` --collection "${collection}"` : ''}` +
-    `${limit ? ` --limit ${limit}` : ''} | ${execute ? 'EXECUTE (writes)' : 'DRY-RUN (no writes)'}`);
+    `${limit ? ` --limit ${limit}` : ''} | ${execute ? 'EXECUTE (writes)' : 'DRY-RUN (no writes)'}` +
+    `${publish ? ' | PUBLISH (status ACTIVE)' : ''}`);
 
   const results = await runPipelineFromUrl(a.url, {
     collection,
     limit,
     execute,
-    publish: !!a.publish,
-    status: 'DRAFT',
+    publish, // implies status ACTIVE (see resolveStatus); no --publish => DRAFT
     scrape: { actorInput: { startUrls: [{ url: a.url }], ...(limit ? { maxItems: limit } : {}) } },
     map: { trustImages: true }, // standing owner supplier attestation (see CLAUDE.md)
   });
@@ -303,7 +323,34 @@ async function main() {
       console.log(`• (dry-run) ${r.draft.title} -> collection "${r.draft.collection.title}"`);
     }
   }
-  if (!execute) console.log('\n🔶 DRY-RUN GATE: no writes. Re-run with --execute to create products.');
+  if (!execute) {
+    console.log('\n🔶 DRY-RUN GATE: no writes. Re-run with --execute to create products.');
+    return;
+  }
+
+  // Post-publish verification: read back each created product and fail loud if
+  // any did not end up live (ACTIVE + on >=1 publication). publishablePublish
+  // reports no error on a DRAFT product, so reading back is the only proof.
+  if (publish) {
+    const createdIds = results.filter((r) => r.execution?.product).map((r) => r.execution.product.id);
+    const checks = await verifyPublished(createdIds);
+    const byId = new Map(checks.map((c) => [c.id, c]));
+    console.log('\n— publish verification —');
+    let notLive = 0;
+    for (const id of createdIds) {
+      const c = byId.get(id);
+      if (!c) { console.log(`❌ ${id}: not found on read-back`); notLive++; continue; }
+      const mark = c.live ? '✅' : '❌';
+      if (!c.live) notLive++;
+      console.log(`${mark} ${c.title} -> status=${c.status} pub=${c.publicationCount} publishedAt=${c.publishedAt ? 'yes' : 'NO'}`);
+    }
+    const execFailures = results.filter((r) => r.execError || r.buildError).length;
+    console.log(`\nLive ${createdIds.length - notLive}/${createdIds.length}` +
+      `${execFailures ? `, ${execFailures} build/exec failure(s)` : ''}.`);
+    if (notLive > 0 || execFailures > 0) {
+      process.exitCode = 1; // fail-loud: not every product is live
+    }
+  }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
