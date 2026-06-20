@@ -14,7 +14,9 @@
 
 'use strict';
 
-const LENGTHS = [['maxi', 'Maxi'], ['midi', 'Midi'], ['mini', 'Mini']];
+import { detectLength } from './lengths.js';
+import { normalizeColorName } from '../normalize/colors.js';
+
 const NECKLINES = ['One Shoulder', 'Off Shoulder', 'Off-Shoulder', 'V Neck', 'V-Neck', 'Square Neck',
   'Halter', 'Sweetheart', 'Cowl Neck', 'Cowl', 'Strapless', 'Scoop Neck', 'Boat Neck', 'High Neck'];
 const SLEEVES = ['Long Sleeve', 'Short Sleeve', 'Cap Sleeve', 'Puff Sleeve', 'Sleeveless'];
@@ -93,8 +95,21 @@ export function mapApifyToInput(raw, opts = {}) {
 
   // Options from variants (this actor has no top-level options array).
   const cls = classifyOptions(variants);
-  let colors = cls.colors;
+
+  // Color allowlist: keep real colors (normalized casing), drop non-colors such
+  // as patterns ("Dots", "Floral"). A dropped value never becomes an option.
+  const keptColors = [];
+  const droppedColors = [];
+  for (const c of cls.colors) {
+    const norm = normalizeColorName(c);
+    if (norm) keptColors.push(norm);
+    else droppedColors.push(c);
+  }
+  let colors = uniq(keptColors);
   let sizes = cls.sizes;
+  if (droppedColors.length) {
+    notes.push(`Dropped non-color option value(s): ${droppedColors.join(', ')} (not in the color allowlist).`);
+  }
   if (colors.length === 0) { colors = ['Default']; notes.push('No color option detected; defaulted to "Default".'); }
   if (sizes.length === 0) { sizes = ['One Size']; notes.push('No size option detected; defaulted to "One Size".'); }
 
@@ -127,7 +142,9 @@ export function mapApifyToInput(raw, opts = {}) {
 
   // Attributes parsed from the title (+ occasion from tags). Only when present.
   const attributes = {};
-  const length = (() => { const t = (raw.title || '').toLowerCase(); for (const [n, l] of LENGTHS) if (t.includes(n)) return l; return null; })();
+  // Length inference from the source title (spec §5.1/§12). If none is found the
+  // title builder fails the product downstream — a length is never omitted.
+  const length = detectLength(raw.title) || (isDress ? detectLength((raw.tags || []).join(' ')) : null);
   if (length) attributes.length = length;
   const neckline = firstMatch(raw.title, NECKLINES); if (neckline) attributes.neckline = neckline;
   const sleeve = firstMatch(raw.title, SLEEVES); if (sleeve) attributes.sleeve = sleeve;

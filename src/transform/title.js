@@ -14,6 +14,8 @@
 
 'use strict';
 
+import { hasLengthToken } from './lengths.js';
+
 /** Collapse whitespace and trim. */
 function clean(s) {
   return s.replace(/\s+/g, ' ').trim();
@@ -48,6 +50,14 @@ export function titleCore({ isDress, productType, attributes = {} }) {
 /** Full product title including the invented name after the pipe. */
 export function buildTitle(draft) {
   const core = titleCore(draft);
+  // Every dress title must carry a length token (spec §5.1/§12); fail loudly
+  // rather than emit a length-less title.
+  if (draft.isDress && !hasLengthToken(core)) {
+    throw new Error(
+      `Dress title is missing a length token (${'e.g. Midi/Maxi'}): "${core}". ` +
+      'Provide or infer attributes.length before building the title.'
+    );
+  }
   const name = draft.name ? clean(draft.name) : '';
   return name ? `${core} | ${name}` : core;
 }

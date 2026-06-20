@@ -136,10 +136,13 @@ export async function processImages(draft, opts = {}) {
     warnings.push('No images provided; variant image mapping is empty.');
   }
 
-  // Ordered media list with alt text + main flag.
+  // Ordered media list with per-image alt text + main flag. Alt is templated
+  // per product/variant: "<product title core> – <color>" when the image is
+  // tagged to a color, else the colorless core (spec 9.2).
+  const altFor = (color) => (color ? `${altText} – ${color}` : altText);
   const media = approved.map((img) => ({
     src: img.src,
-    altText,
+    altText: altFor(img.color ?? null),
     color: img.color ?? null,
     position: img.position ?? null,
     main: img.src === mainSrc,

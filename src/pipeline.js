@@ -24,6 +24,8 @@ import { buildFxFromEnv } from './transform/currency.js';
 import { executeProductSet } from './shopify/execute.js';
 import { ensureCollection, addProductsToCollection } from './shopify/collections.js';
 import { publishToSalesChannels, verifyPublished } from './shopify/publish.js';
+import { makeNameAllocator } from './content/names.js';
+import { runQAGate } from './validate/qaGate.js';
 
 /**
  * Build the canonical ProductDraft for one input product.
@@ -139,7 +141,9 @@ export async function finalizeProduct(productId, draft, opts = {}) {
  * @param {{status?: 'DRAFT'|'ACTIVE', publish?: boolean, collection?: string, deps?: object}} [opts]
  */
 export async function runProduct(input, opts = {}) {
-  const draft = await buildProductDraft(input, opts.deps || {});
+  // Decide the authoritative name up front so title, SKU, and copy all agree.
+  const named = { ...input, name: makeNameAllocator().take(input.name) };
+  const draft = await buildProductDraft(named, opts.deps || {});
   if (opts.collection) draft.collection.title = opts.collection; // dynamic routing override
   const collection = await ensureCollection(draft.collection.title); // verify or create
   const exec = await executeProductSet(draft, { status: resolveStatus(opts), collectionId: collection.id });
@@ -160,28 +164,6 @@ function dedupeWarnings(warnings) {
     if (!seen.has(key)) seen.set(key, w);
   }
   return [...seen.values()];
-}
-
-/** Brand-style fallback names for cross-batch dedup (spec §14.3). */
-const NAME_POOL = ['Serane', 'Elowen', 'Marielle', 'Avora', 'Celina', 'Evadra', 'Lirelle',
-  'Noemi', 'Calla', 'Vesper', 'Ondine', 'Amaris', 'Sorrel', 'Thalia', 'Maren', 'Linnea',
-  'Cosette', 'Delphine', 'Isolde', 'Rhea', 'Mirabel', 'Yvaine', 'Solene', 'Anouk'];
-
-/** Ensure invented product names are unique within a batch; fixes titles too. */
-function dedupeNames(entries) {
-  const used = new Set();
-  for (const r of entries) {
-    if (!r.draft) continue;
-    let name = r.draft.name;
-    if (used.has(String(name).toLowerCase())) {
-      const alt = NAME_POOL.find((n) => !used.has(n.toLowerCase())) || `${name}-${used.size}`;
-      r.notes.push(`Renamed "${name}" -> "${alt}" for uniqueness (§14.3).`);
-      name = alt;
-      r.draft.name = name;
-      r.draft.title = `${r.draft.title.split(' | ')[0]} | ${name}`;
-    }
-    used.add(String(name).toLowerCase());
-  }
 }
 
 /**
@@ -216,8 +198,11 @@ export async function runPipelineFromUrl(url, opts = {}) {
   let origin = null;
   try { origin = new URL(url).origin; } catch { /* non-URL input */ }
 
-  // Phase 1 — build all drafts (NO writes). Resilient: a failed product is
-  // recorded as buildError and skipped, not fatal to the batch (spec §15).
+  // Phase 1 — build all drafts (NO writes). Each product's unique name is
+  // assigned UP FRONT (before copy/SKU/title) so all three agree and no name
+  // carries over between products. Resilient: a failed product is recorded as
+  // buildError and skipped, not fatal to the batch (spec §15).
+  const allocator = makeNameAllocator();
   const results = [];
   for (const raw of slice) {
     try {
@@ -231,6 +216,7 @@ export async function runPipelineFromUrl(url, opts = {}) {
         mapOpts.sourceCurrency = linkage.variants[0].price_currency;
       }
       const { input, unverifiedImages, notes } = mapApifyToInput(raw, mapOpts);
+      input.name = allocator.take(input.name); // authoritative, batch-unique
       const draft = await buildProductDraft(input, opts.deps || {});
       if (opts.collection) draft.collection.title = opts.collection; // dynamic routing override
       results.push({ input, draft, unverifiedImages, notes });
@@ -239,11 +225,18 @@ export async function runPipelineFromUrl(url, opts = {}) {
     }
   }
 
-  // Phase 2 — unique invented names across the batch (spec §14.3).
-  dedupeNames(results);
+  // Phase 2 — pre-publish QA gate (fail-closed). Validate every built draft;
+  // attach per-product errors. Writes are blocked below if ANY product fails.
+  const built = results.filter((r) => r.draft);
+  const gate = runQAGate(built.map((r) => r.draft));
+  built.forEach((r, i) => { r.qa = gate[i]; if (!gate[i].ok) r.qaErrors = gate[i].errors; });
+  const qaFailed = results.some((r) => r.qaErrors) || results.some((r) => r.buildError);
 
-  // Phase 3 — optional execution. Resilient: per-product try/catch so one
-  // failure doesn't abort the rest; created IDs and errors are both captured.
+  // Phase 3 — optional execution. Skipped entirely if QA failed: never publish a
+  // batch that contains a broken product (the gate is the safety net).
+  if (opts.execute && qaFailed) {
+    return results; // caller (CLI) reports failures and exits non-zero
+  }
   if (opts.execute) {
     const status = resolveStatus(opts); // --publish implies ACTIVE
     const collCache = new Map(); // verify/create each collection once per batch
@@ -320,9 +313,27 @@ async function main() {
     } else if (r.buildError) {
       console.log(`❌ ${r.raw?.title || '?'}: ${r.buildError}`);
     } else if (r.draft) {
-      console.log(`• (dry-run) ${r.draft.title} -> collection "${r.draft.collection.title}"`);
+      console.log(`• ${r.draft.title} -> collection "${r.draft.collection.title}"${r.qaErrors ? ' [QA FAIL]' : ''}`);
     }
   }
+
+  // Pre-publish QA gate report. Fail loudly (non-zero exit) on any QA or build
+  // failure; in execute mode this also means NOTHING was written.
+  const qaFails = results.filter((r) => r.qaErrors);
+  const buildFails = results.filter((r) => r.buildError);
+  if (qaFails.length || buildFails.length) {
+    console.log('\n❌ PRE-PUBLISH QA GATE FAILED:');
+    for (const r of buildFails) console.log(`  • ${r.raw?.title || '?'} (build): ${r.buildError}`);
+    for (const r of qaFails) {
+      console.log(`  • ${r.draft.title}:`);
+      for (const e of r.qaErrors) console.log(`      - ${e}`);
+    }
+    if (execute) console.log('\n⛔ No products were created or published (gate is fail-closed).');
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`\n✅ QA gate: ${results.filter((r) => r.qa?.ok).length}/${results.filter((r) => r.draft).length} products passed.`);
+
   if (!execute) {
     console.log('\n🔶 DRY-RUN GATE: no writes. Re-run with --execute to create products.');
     return;
