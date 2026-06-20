@@ -1,18 +1,19 @@
 /**
- * Add products from a URL into an EXISTING collection, de-duplicated.
+ * Add products from one or more source URLs into a single collection, de-duped.
  *
- * Scrapes a source collection URL, fingerprints the products already in the
- * target Shopify collection by their source image identity (the image filename
- * UUID is preserved when Shopify re-hosts), and skips any scraped product that
- * matches one already live (or a duplicate earlier in the same run). Survivors
- * are built through the normal pipeline (unique naming, transforms, QA gate).
+ * Scrapes every URL, fingerprints products already in the target collection by
+ * source image identity (the image filename UUID is preserved when Shopify
+ * re-hosts), and skips any scraped product that matches one already live OR a
+ * duplicate earlier in the same run (across all URLs). Survivors are built
+ * through the normal pipeline (unique naming seeded from the collection, length
+ * + color/pattern rules, QA gate).
  *
- * Writes are OFF by default (dry-run gate). With --execute it creates ONLY the
- * new survivors, routed into the existing collection (verified, never created
- * anew here beyond ensureCollection's verify-or-create), and with --publish
- * sets them ACTIVE and publishes, then verifies each is live.
+ * The collection is created-or-reused once and every survivor routes into it.
+ * Writes are OFF by default (dry-run gate). With --execute it creates the new
+ * survivors; with --publish it sets them ACTIVE, publishes, and verifies live.
  *
- *   node --env-file=.env scripts/add-from-url-deduped.js "<url>" "<collection>" [--limit N] [--execute] [--publish]
+ *   node --env-file=.env scripts/add-from-url-deduped.js --collection "Name" \
+ *        [--occasion "X"] [--limit N] [--execute] [--publish] <url> [<url> ...]
  */
 
 'use strict';
@@ -28,17 +29,26 @@ import { verifyPublished } from '../src/shopify/publish.js';
 import { buildProductSetOperation } from '../src/shopify/payload-builder.js';
 import { shopifyGraphQL } from '../src/shopify/client.js';
 
-const url = process.argv[2];
-const collectionName = process.argv[3];
-const arg = (k) => { const i = process.argv.indexOf(k); return i >= 0 ? process.argv[i + 1] : undefined; };
-const limit = arg('--limit') ? Number(arg('--limit')) : undefined;
-const occasion = arg('--occasion'); // align title/SEO to the collection (e.g. "Wedding Guest")
-const includeNoColor = process.argv.includes('--include-no-color'); // build products whose only color is a pattern
-const execute = process.argv.includes('--execute');
-const publish = process.argv.includes('--publish');
+// --- arg parsing: flags (some take a value) + positional URLs ----------------
+const VALUE_FLAGS = new Set(['--collection', '--occasion', '--limit']);
+const BOOL_FLAGS = new Set(['--execute', '--publish', '--include-no-color']);
+const opts = {}; const urls = [];
+for (let i = 2; i < process.argv.length; i++) {
+  const a = process.argv[i];
+  if (VALUE_FLAGS.has(a)) { opts[a.slice(2)] = process.argv[++i]; }
+  else if (BOOL_FLAGS.has(a)) { opts[a.slice(2)] = true; }
+  else if (a.startsWith('--')) { console.error(`Unknown flag: ${a}`); process.exit(2); }
+  else urls.push(a);
+}
+const collectionName = opts.collection;
+const occasion = opts.occasion;            // optional title/SEO occasion alignment
+const limit = opts.limit ? Number(opts.limit) : undefined; // per-URL cap
+const includeNoColor = !!opts['include-no-color'];
+const execute = !!opts.execute;
+const publish = !!opts.publish;
 
-if (!url || !collectionName) {
-  console.error('Usage: node --env-file=.env scripts/add-from-url-deduped.js "<url>" "<collection>" [--limit N] [--execute] [--publish]');
+if (!collectionName || urls.length === 0) {
+  console.error('Usage: node --env-file=.env scripts/add-from-url-deduped.js --collection "Name" [--occasion "X"] [--limit N] [--execute] [--publish] <url> [<url> ...]');
   process.exit(2);
 }
 
@@ -50,7 +60,6 @@ function imageToken(u) {
 function tokensFrom(images) {
   return [...new Set((images || []).map((im) => imageToken(im.src || im.url || im)).filter(Boolean))];
 }
-
 /** Product name = the part after " | " in the generated title. */
 function nameFromTitle(title) {
   const t = String(title || '');
@@ -58,16 +67,15 @@ function nameFromTitle(title) {
 }
 
 /**
- * Fingerprint the existing collection: image token -> product title, plus the
- * set of product names already in use (so we never re-allocate a colliding name).
+ * Fingerprint the existing collection (if it exists): image token -> product
+ * title, plus the names already in use. Non-fatal when the collection is new.
  */
 async function fetchExisting(name) {
   const q = `query($q:String!,$after:String){
     collections(first:1, query:$q){ nodes{ id title
       products(first:50, after:$after){ pageInfo{hasNextPage endCursor}
         nodes{ title media(first:50){ nodes{ ... on MediaImage { image { url } } } } } } } } }`;
-  const tokenToTitle = new Map();
-  const names = [];
+  const tokenToTitle = new Map(); const names = [];
   let after = null; let collId = null; let collTitle = null;
   do {
     const d = await shopifyGraphQL(q, { q: `title:"${name}"`, after });
@@ -76,10 +84,7 @@ async function fetchExisting(name) {
     collId = coll.id; collTitle = coll.title;
     for (const p of coll.products.nodes) {
       const nm = nameFromTitle(p.title); if (nm) names.push(nm);
-      for (const m of p.media.nodes) {
-        const t = imageToken(m.image?.url);
-        if (t) tokenToTitle.set(t, p.title);
-      }
+      for (const m of p.media.nodes) { const t = imageToken(m.image?.url); if (t) tokenToTitle.set(t, p.title); }
     }
     after = coll.products.pageInfo.hasNextPage ? coll.products.pageInfo.endCursor : null;
   } while (after);
@@ -87,82 +92,84 @@ async function fetchExisting(name) {
 }
 
 console.log(`→ add-from-url-deduped (writes ${execute ? 'ON' : 'OFF'}${publish ? ', PUBLISH/ACTIVE' : ''})`);
-console.log(`  url        : ${url}`);
-console.log(`  collection : "${collectionName}" (existing — reused, not recreated)\n`);
+console.log(`  collection : "${collectionName}"`);
+urls.forEach((u, i) => console.log(`  url ${i + 1}      : ${u}`));
+if (occasion) console.log(`  occasion   : titles/SEO will include "${occasion}"`);
+console.log('');
 
 // 1) Fingerprint the existing collection (image identity + names in use).
 const { tokenToTitle, names: existingNames, collId, collTitle } = await fetchExisting(collectionName);
-if (!collId) { console.error(`❌ Collection "${collectionName}" not found. Aborting (won't create a new one).`); process.exit(1); }
-console.log(`Existing collection: ${collTitle} (${collId}); ${tokenToTitle.size} image fingerprints, ${existingNames.length} names in use.`);
-if (occasion) console.log(`Occasion override: titles/SEO will include "${occasion}".`);
+console.log(collId
+  ? `Existing collection: ${collTitle} (${collId}); ${tokenToTitle.size} image fingerprints, ${existingNames.length} names in use.\n`
+  : `Collection "${collectionName}" does not exist yet — it will be created on --execute.\n`);
+
+// 2) Scrape every URL, tagging each item with its source URL.
+const items = [];
+for (const url of urls) {
+  const { items: got } = await scrapeProducts(url, { actorInput: { startUrls: [{ url }], ...(limit ? { maxItems: limit } : {}) } });
+  const slice = limit ? got.slice(0, limit) : got;
+  slice.forEach((raw) => items.push({ raw, url }));
+  console.log(`Scraped ${slice.length} from ${url}`);
+}
 console.log('');
 
-// 2) Scrape the source URL.
-const { items } = await scrapeProducts(url, { actorInput: { startUrls: [{ url }], ...(limit ? { maxItems: limit } : {}) } });
-const slice = limit ? items.slice(0, limit) : items;
-let origin = null; try { origin = new URL(url).origin; } catch { /* */ }
-
-// 3) Classify each scraped product: new vs duplicate (existing or within-run).
-// Seed the allocator with names already in the collection so no name collides.
-const allocator = makeNameAllocator(existingNames);
+// 3) Classify across the whole batch (existing + cross-URL + within-URL dedup).
+const allocator = makeNameAllocator(existingNames); // unique vs the collection
 const survivors = [];
 const skipped = [];
-const held = [];          // no real color at source (e.g. only "Floral") — await decision
-const seenThisRun = new Map(); // token -> source title (within-URL dedup)
-for (const raw of slice) {
+const held = [];
+const seenThisRun = new Map(); // token -> source title (cross+within-URL dedup)
+const perUrl = new Map(urls.map((u) => [u, { scraped: 0, added: 0, skipped: 0, held: 0 }]));
+for (const { raw, url } of items) {
+  const stat = perUrl.get(url); stat.scraped++;
+  let origin = null; try { origin = new URL(url).origin; } catch { /* */ }
   let linkage = null;
   if (origin && raw.handle) { try { linkage = await fetchShopifyProductJson(origin, raw.handle); } catch { /* */ } }
   const tokens = tokensFrom(linkage?.images || raw.images);
 
   const existHit = tokens.find((t) => tokenToTitle.has(t));
-  if (existHit) { skipped.push({ raw, reason: `already live as "${tokenToTitle.get(existHit)}"` }); continue; }
+  if (existHit) { skipped.push({ raw, url, reason: `already in collection as "${tokenToTitle.get(existHit)}"` }); stat.skipped++; continue; }
   const runHit = tokens.find((t) => seenThisRun.has(t));
-  if (runHit) { skipped.push({ raw, reason: `duplicate within this URL of "${seenThisRun.get(runHit)}"` }); continue; }
-  if (tokens.length === 0) { skipped.push({ raw, reason: 'no images to fingerprint (skipped to be safe)' }); continue; }
+  if (runHit) { skipped.push({ raw, url, reason: `duplicate of "${seenThisRun.get(runHit)}" earlier in this run` }); stat.skipped++; continue; }
+  if (tokens.length === 0) { skipped.push({ raw, url, reason: 'no images to fingerprint (skipped to be safe)' }); stat.skipped++; continue; }
 
-  // Map first so we can inspect the resolved (allowlisted) colors.
   const { input, unverifiedImages, notes } = mapApifyToInput(raw, { trustImages: true, linkage, referenceUrl: url, group: collectionName });
 
-  // Hold products whose only color is a dropped pattern (-> ["Default"]).
-  const noRealColor = input.colors.length === 1 && input.colors[0] === 'Default';
-  if (noRealColor && !includeNoColor) {
-    held.push({ raw, reason: 'no real color at source (only a pattern e.g. "Floral")' });
-    continue;
+  // Hold products with no real color AND no pattern (-> ["Default"]).
+  if (input.colors.length === 1 && input.colors[0] === 'Default' && !includeNoColor) {
+    held.push({ raw, url, reason: 'no real color or pattern at source' }); stat.held++; continue;
   }
 
   tokens.forEach((t) => seenThisRun.set(t, raw.title));
   try {
-    // 2a — align title/SEO to the collection's occasion (no other claims invented).
-    if (occasion && input.isDress) {
-      input.attributes = { ...(input.attributes || {}), occasion };
-    }
-    input.name = allocator.take(input.name); // 2b — unique vs existing collection
+    if (occasion && input.isDress) input.attributes = { ...(input.attributes || {}), occasion };
+    input.name = allocator.take(input.name);
     const draft = await buildProductDraft(input);
-    draft.collection.title = collectionName; // route into the existing collection
-    survivors.push({ raw, input, draft, notes, unverifiedImages });
+    draft.collection.title = collectionName;
+    survivors.push({ raw, url, input, draft, notes, unverifiedImages });
+    stat.added++;
   } catch (err) {
-    skipped.push({ raw, reason: `build failed: ${err.message}` });
+    skipped.push({ raw, url, reason: `build failed: ${err.message}` }); stat.skipped++;
   }
 }
 
-// 4) Pre-publish QA gate on survivors.
+// 4) Pre-publish QA gate.
 const gate = runQAGate(survivors.map((s) => s.draft));
 survivors.forEach((s, i) => { s.qa = gate[i]; });
 const qaFailed = gate.some((g) => !g.ok);
 
 // 5) Report.
-console.log(`Scraped ${slice.length} | NEW ${survivors.length} | SKIPPED ${skipped.length} | HELD ${held.length}\n`);
-console.log('— skipped (duplicates / not buildable) —');
-if (!skipped.length) console.log('  (none)');
-for (const s of skipped) console.log(`  • ${s.raw.title}  —  ${s.reason}`);
-console.log('\n— held for your decision (no real color at source) —');
-if (!held.length) console.log('  (none)');
-for (const h of held) console.log(`  • ${h.raw.title}  —  ${h.reason}`);
+console.log('— per URL —');
+for (const [u, s] of perUrl) console.log(`  ${u}\n     scraped ${s.scraped} | added ${s.added} | skipped ${s.skipped} | held ${s.held}`);
+console.log(`\nTOTAL unique NEW: ${survivors.length} | skipped (dupes/unbuildable): ${skipped.length} | held: ${held.length}`);
+
+if (skipped.length) { console.log('\n— skipped —'); for (const s of skipped) console.log(`  • ${s.raw.title} — ${s.reason}`); }
+if (held.length) { console.log('\n— held for your decision —'); for (const h of held) console.log(`  • ${h.raw.title} — ${h.reason}`); }
 
 console.log('\n— new products + QA —');
 survivors.forEach((s, i) => {
   console.log(`  ${i + 1}. ${s.draft.title}`);
-  console.log(`       variants ${s.draft.variants.length} | sample ${s.draft.variants[0]?.sku} $${s.draft.variants[0]?.price}/$${s.draft.variants[0]?.compareAtPrice} | colors ${s.input.colors.join('|')}`);
+  console.log(`       variants ${s.draft.variants.length} | sample ${s.draft.variants[0]?.sku} $${s.draft.variants[0]?.price}/$${s.draft.variants[0]?.compareAtPrice} | colors ${s.input.colors.join('|')}${s.input.pattern ? ` | pattern ${s.input.pattern}${s.input.feedColor ? `→feed ${s.input.feedColor}` : ''}` : ''}`);
   console.log(`       QA: ${s.qa.ok ? '✅ pass' : '❌ ' + s.qa.errors.join('; ')}`);
 });
 
@@ -179,11 +186,11 @@ if (!execute) {
   process.exit(process.exitCode || 0);
 }
 
-// 7) Execute (only survivors), routed into the existing collection.
+// 7) Execute (only survivors) into the one collection.
 if (qaFailed) { console.log('\n⛔ QA gate failed — refusing to write anything (fail-closed).'); process.exit(1); }
 if (!survivors.length) { console.log('\nNothing new to add. Done.'); process.exit(0); }
 
-const collection = await ensureCollection(collectionName); // verify-or-create (exists -> reused)
+const collection = await ensureCollection(collectionName); // create-or-reuse
 const status = publish ? 'ACTIVE' : 'DRAFT';
 console.log(`\n→ Creating ${survivors.length} product(s) as ${status} in "${collection.title}"...`);
 const created = [];
@@ -205,9 +212,7 @@ if (publish && created.length) {
   console.log('\n— publish verification —');
   let notLive = 0;
   for (const c of created) {
-    const v = byId.get(c.id);
-    const ok = v?.live;
-    if (!ok) notLive++;
+    const v = byId.get(c.id); const ok = v?.live; if (!ok) notLive++;
     console.log(`  ${ok ? '✅' : '❌'} ${c.title} -> status=${v?.status} pub=${v?.publicationCount} publishedAt=${v?.publishedAt ? 'yes' : 'NO'}`);
   }
   console.log(`\nLive ${created.length - notLive}/${created.length}.`);
