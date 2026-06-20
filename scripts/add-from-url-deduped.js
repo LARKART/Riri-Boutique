@@ -32,6 +32,8 @@ const url = process.argv[2];
 const collectionName = process.argv[3];
 const arg = (k) => { const i = process.argv.indexOf(k); return i >= 0 ? process.argv[i + 1] : undefined; };
 const limit = arg('--limit') ? Number(arg('--limit')) : undefined;
+const occasion = arg('--occasion'); // align title/SEO to the collection (e.g. "Wedding Guest")
+const includeNoColor = process.argv.includes('--include-no-color'); // build products whose only color is a pattern
 const execute = process.argv.includes('--execute');
 const publish = process.argv.includes('--publish');
 
@@ -49,13 +51,23 @@ function tokensFrom(images) {
   return [...new Set((images || []).map((im) => imageToken(im.src || im.url || im)).filter(Boolean))];
 }
 
-/** Fingerprint the existing collection: map image token -> product title. */
-async function fetchExistingTokens(name) {
+/** Product name = the part after " | " in the generated title. */
+function nameFromTitle(title) {
+  const t = String(title || '');
+  return t.includes(' | ') ? t.split(' | ').pop().trim() : '';
+}
+
+/**
+ * Fingerprint the existing collection: image token -> product title, plus the
+ * set of product names already in use (so we never re-allocate a colliding name).
+ */
+async function fetchExisting(name) {
   const q = `query($q:String!,$after:String){
     collections(first:1, query:$q){ nodes{ id title
       products(first:50, after:$after){ pageInfo{hasNextPage endCursor}
         nodes{ title media(first:50){ nodes{ ... on MediaImage { image { url } } } } } } } } }`;
   const tokenToTitle = new Map();
+  const names = [];
   let after = null; let collId = null; let collTitle = null;
   do {
     const d = await shopifyGraphQL(q, { q: `title:"${name}"`, after });
@@ -63,6 +75,7 @@ async function fetchExistingTokens(name) {
     if (!coll) break;
     collId = coll.id; collTitle = coll.title;
     for (const p of coll.products.nodes) {
+      const nm = nameFromTitle(p.title); if (nm) names.push(nm);
       for (const m of p.media.nodes) {
         const t = imageToken(m.image?.url);
         if (t) tokenToTitle.set(t, p.title);
@@ -70,17 +83,19 @@ async function fetchExistingTokens(name) {
     }
     after = coll.products.pageInfo.hasNextPage ? coll.products.pageInfo.endCursor : null;
   } while (after);
-  return { tokenToTitle, collId, collTitle };
+  return { tokenToTitle, names, collId, collTitle };
 }
 
 console.log(`→ add-from-url-deduped (writes ${execute ? 'ON' : 'OFF'}${publish ? ', PUBLISH/ACTIVE' : ''})`);
 console.log(`  url        : ${url}`);
 console.log(`  collection : "${collectionName}" (existing — reused, not recreated)\n`);
 
-// 1) Fingerprint the existing collection.
-const { tokenToTitle, collId, collTitle } = await fetchExistingTokens(collectionName);
+// 1) Fingerprint the existing collection (image identity + names in use).
+const { tokenToTitle, names: existingNames, collId, collTitle } = await fetchExisting(collectionName);
 if (!collId) { console.error(`❌ Collection "${collectionName}" not found. Aborting (won't create a new one).`); process.exit(1); }
-console.log(`Existing collection: ${collTitle} (${collId}); ${tokenToTitle.size} source image fingerprints.\n`);
+console.log(`Existing collection: ${collTitle} (${collId}); ${tokenToTitle.size} image fingerprints, ${existingNames.length} names in use.`);
+if (occasion) console.log(`Occasion override: titles/SEO will include "${occasion}".`);
+console.log('');
 
 // 2) Scrape the source URL.
 const { items } = await scrapeProducts(url, { actorInput: { startUrls: [{ url }], ...(limit ? { maxItems: limit } : {}) } });
@@ -88,9 +103,11 @@ const slice = limit ? items.slice(0, limit) : items;
 let origin = null; try { origin = new URL(url).origin; } catch { /* */ }
 
 // 3) Classify each scraped product: new vs duplicate (existing or within-run).
-const allocator = makeNameAllocator();
+// Seed the allocator with names already in the collection so no name collides.
+const allocator = makeNameAllocator(existingNames);
 const survivors = [];
 const skipped = [];
+const held = [];          // no real color at source (e.g. only "Floral") — await decision
 const seenThisRun = new Map(); // token -> source title (within-URL dedup)
 for (const raw of slice) {
   let linkage = null;
@@ -102,11 +119,24 @@ for (const raw of slice) {
   const runHit = tokens.find((t) => seenThisRun.has(t));
   if (runHit) { skipped.push({ raw, reason: `duplicate within this URL of "${seenThisRun.get(runHit)}"` }); continue; }
   if (tokens.length === 0) { skipped.push({ raw, reason: 'no images to fingerprint (skipped to be safe)' }); continue; }
-  tokens.forEach((t) => seenThisRun.set(t, raw.title));
 
+  // Map first so we can inspect the resolved (allowlisted) colors.
+  const { input, unverifiedImages, notes } = mapApifyToInput(raw, { trustImages: true, linkage, referenceUrl: url, group: collectionName });
+
+  // Hold products whose only color is a dropped pattern (-> ["Default"]).
+  const noRealColor = input.colors.length === 1 && input.colors[0] === 'Default';
+  if (noRealColor && !includeNoColor) {
+    held.push({ raw, reason: 'no real color at source (only a pattern e.g. "Floral")' });
+    continue;
+  }
+
+  tokens.forEach((t) => seenThisRun.set(t, raw.title));
   try {
-    const { input, unverifiedImages, notes } = mapApifyToInput(raw, { trustImages: true, linkage, referenceUrl: url, group: collectionName });
-    input.name = allocator.take(input.name);
+    // 2a — align title/SEO to the collection's occasion (no other claims invented).
+    if (occasion && input.isDress) {
+      input.attributes = { ...(input.attributes || {}), occasion };
+    }
+    input.name = allocator.take(input.name); // 2b — unique vs existing collection
     const draft = await buildProductDraft(input);
     draft.collection.title = collectionName; // route into the existing collection
     survivors.push({ raw, input, draft, notes, unverifiedImages });
@@ -121,10 +151,13 @@ survivors.forEach((s, i) => { s.qa = gate[i]; });
 const qaFailed = gate.some((g) => !g.ok);
 
 // 5) Report.
-console.log(`Scraped ${slice.length} | NEW ${survivors.length} | SKIPPED ${skipped.length}\n`);
+console.log(`Scraped ${slice.length} | NEW ${survivors.length} | SKIPPED ${skipped.length} | HELD ${held.length}\n`);
 console.log('— skipped (duplicates / not buildable) —');
 if (!skipped.length) console.log('  (none)');
 for (const s of skipped) console.log(`  • ${s.raw.title}  —  ${s.reason}`);
+console.log('\n— held for your decision (no real color at source) —');
+if (!held.length) console.log('  (none)');
+for (const h of held) console.log(`  • ${h.raw.title}  —  ${h.reason}`);
 
 console.log('\n— new products + QA —');
 survivors.forEach((s, i) => {
