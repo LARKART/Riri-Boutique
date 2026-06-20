@@ -188,5 +188,23 @@ export function mapApifyToInput(raw, opts = {}) {
     notes.push(`${scraped.length} scraped image(s) QUARANTINED (not in images[]). Use trustImages:true only if licensed/owned/approved (spec §9.3/§17).`);
   }
 
+  // Reconcile image color tags with the kept color options: normalize casing to
+  // the chosen color, and drop the tag for any color that was filtered out (e.g.
+  // a "Dots" pattern) so the image survives as a gallery image instead of an
+  // orphaned color reference that would fail input validation.
+  if (Array.isArray(input.images)) {
+    const colorByLower = new Map(colors.map((c) => [c.toLowerCase(), c]));
+    let untagged = 0;
+    input.images = input.images.map((im) => {
+      if (im.color == null) return im;
+      const canon = colorByLower.get(String(normalizeColorName(im.color) || im.color).toLowerCase());
+      if (canon) return { ...im, color: canon };
+      const { color, ...rest } = im; // dropped color -> keep as gallery image
+      untagged++;
+      return rest;
+    });
+    if (untagged) notes.push(`${untagged} image(s) had a non-color/dropped tag removed (kept as gallery image).`);
+  }
+
   return { input, unverifiedImages, notes };
 }
