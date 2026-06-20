@@ -18,7 +18,7 @@ const STORE_CURRENCY = 'CAD'; // confirmed via get-shop-info
 const KNOWN_KEYS = new Set([
   'sourceCurrency', 'sourcePrice', 'productType', 'isDress', 'name', 'productCode',
   'group', 'attributes', 'colors', 'sizes', 'variantOverrides', 'images',
-  'referenceUrl', 'descriptionInput',
+  'referenceUrl', 'descriptionInput', 'pattern', 'feedColor',
 ]);
 const KNOWN_ATTR_KEYS = new Set(['neckline', 'silhouette', 'occasion', 'length', 'sleeve', 'material']);
 

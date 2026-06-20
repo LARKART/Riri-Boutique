@@ -16,6 +16,7 @@
 
 import { detectLength } from './lengths.js';
 import { normalizeColorName } from '../normalize/colors.js';
+import { normalizePattern, inferBaseColor } from '../normalize/patterns.js';
 
 const NECKLINES = ['One Shoulder', 'Off Shoulder', 'Off-Shoulder', 'V Neck', 'V-Neck', 'Square Neck',
   'Halter', 'Sweetheart', 'Cowl Neck', 'Cowl', 'Strapless', 'Scoop Neck', 'Boat Neck', 'High Neck'];
@@ -96,19 +97,25 @@ export function mapApifyToInput(raw, opts = {}) {
   // Options from variants (this actor has no top-level options array).
   const cls = classifyOptions(variants);
 
-  // Color allowlist: keep real colors (normalized casing), drop non-colors such
-  // as patterns ("Dots", "Floral"). A dropped value never becomes an option.
+  // Color/pattern allowlist: keep real colors AND recognized patterns (Floral,
+  // Polka Dot, …) as storefront option values; only truly unknown values are
+  // dropped. Patterns are tracked so the Google feed can carry pattern + an
+  // inferred base color (see below).
   const keptColors = [];
   const droppedColors = [];
+  const patternsFound = [];
   for (const c of cls.colors) {
     const norm = normalizeColorName(c);
-    if (norm) keptColors.push(norm);
-    else droppedColors.push(c);
+    if (norm) { keptColors.push(norm); continue; }
+    const pat = normalizePattern(c);
+    if (pat) { keptColors.push(pat); patternsFound.push(pat); continue; }
+    droppedColors.push(c);
   }
   let colors = uniq(keptColors);
+  const patterns = uniq(patternsFound);
   let sizes = cls.sizes;
   if (droppedColors.length) {
-    notes.push(`Dropped non-color option value(s): ${droppedColors.join(', ')} (not in the color allowlist).`);
+    notes.push(`Dropped non-color/non-pattern option value(s): ${droppedColors.join(', ')} (not recognized).`);
   }
   if (colors.length === 0) { colors = ['Default']; notes.push('No color option detected; defaulted to "Default".'); }
   if (sizes.length === 0) { sizes = ['One Size']; notes.push('No size option detected; defaulted to "One Size".'); }
@@ -166,6 +173,22 @@ export function mapApifyToInput(raw, opts = {}) {
   };
   if (Object.keys(attributes).length) input.attributes = attributes;
   if (variantOverrides.length) input.variantOverrides = variantOverrides;
+
+  // Pattern handling: a print kept as a storefront color also feeds GMC `pattern`.
+  // When the option is ENTIRELY pattern(s) (no real color), infer a base color
+  // for the GMC `color` attribute so the feed isn't "Floral".
+  if (patterns.length) {
+    input.pattern = patterns.join(' / ');
+    const hasRealColor = colors.some((c) => normalizeColorName(c));
+    if (!hasRealColor) {
+      const tagStr = Array.isArray(raw.tags) ? raw.tags.join(' ') : String(raw.tags || '');
+      input.feedColor = inferBaseColor(`${raw.title || ''} ${tagStr} ${raw.body_html || ''}`);
+      notes.push(`Pattern-only color (${input.pattern}); storefront keeps the pattern label, feed color inferred as "${input.feedColor}".`);
+    } else {
+      notes.push(`Pattern value(s) ${input.pattern} kept as variant(s) alongside real colors; feed pattern set.`);
+    }
+  }
+
   const url = referenceUrl || raw.url;
   if (url && /^https?:\/\//.test(url)) input.referenceUrl = url;
   if (currency !== 'CAD') notes.push(`sourceCurrency=${currency}; verify FX before pricing (spec §13).`);

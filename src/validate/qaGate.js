@@ -11,6 +11,7 @@
 
 import { productCode } from '../transform/sku.js';
 import { isAllowedColor } from '../normalize/colors.js';
+import { isPattern } from '../normalize/patterns.js';
 import { hasLengthToken } from '../transform/lengths.js';
 import { DRESS_CATEGORY_GID } from '../transform/taxonomy.js';
 import { FEED_NAMESPACE } from '../transform/feed.js';
@@ -74,10 +75,24 @@ export function checkProductQA(draft, opts = {}) {
     errors.push(`Title "${draft.title}" is missing a length token (Midi/Maxi/etc.).`);
   }
 
-  // 4) Every color option value is a real, allowed color.
+  // 4) Every color option value is a real, allowed color OR a recognized pattern.
   const colorOption = (draft.options || []).find((o) => /colou?r/i.test(o.name || ''));
-  for (const c of colorOption?.values || []) {
-    if (!isAllowedColor(c)) errors.push(`Color "${c}" is not an allowed color value.`);
+  const colorValues = colorOption?.values || [];
+  for (const c of colorValues) {
+    if (!isAllowedColor(c) && !isPattern(c)) errors.push(`Color "${c}" is not an allowed color or pattern value.`);
+  }
+  // Pattern products must carry feed attributes: `pattern` always; and `color`
+  // (base color override) when the option is entirely patterns.
+  const feedAll = draft.feedMetafields || [];
+  const patternVals = colorValues.filter((c) => isPattern(c) && !isAllowedColor(c));
+  if (patternVals.length) {
+    if (!feedAll.some((m) => m.namespace === FEED_NAMESPACE && m.key === 'pattern')) {
+      errors.push(`Pattern color(s) ${patternVals.join(', ')} but no ${FEED_NAMESPACE}.pattern feed metafield.`);
+    }
+    const onlyPatterns = colorValues.every((c) => isPattern(c) && !isAllowedColor(c));
+    if (onlyPatterns && !feedAll.some((m) => m.namespace === FEED_NAMESPACE && m.key === 'color')) {
+      errors.push(`Pattern-only product but no ${FEED_NAMESPACE}.color (base color) feed metafield.`);
+    }
   }
 
   // 5) compareAtPrice > price and ends in .00.

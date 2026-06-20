@@ -56,9 +56,9 @@ export async function buildProductDraft(input, deps = {}) {
   const title = buildTitle(draft);
   const variants = buildVariants(draft, { fx: deps.fx || buildFxFromEnv() });
 
-  // Stage 5 — taxonomy + GMC feed fields.
+  // Stage 5 — taxonomy + GMC feed fields (pattern + inferred base color for prints).
   const category = await resolveCategory(draft, deps.gql);
-  const feedMetafields = buildFeedMetafields();
+  const feedMetafields = buildFeedMetafields({ pattern: draft.pattern, color: draft.feedColor });
 
   // Stage 7 — images + variant color mapping.
   const images = await processImages(draft, { detectors: deps.imageDetectors });
