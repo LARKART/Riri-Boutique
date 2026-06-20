@@ -91,6 +91,18 @@ async function fetchExisting(name) {
   return { tokenToTitle, names, collId, collTitle };
 }
 
+/** All product names already used anywhere in the store (avoid store-wide name/SKU collisions). */
+async function fetchAllProductNames() {
+  const q = `query($after:String){ products(first:250, after:$after){ pageInfo{hasNextPage endCursor} nodes{ title } } }`;
+  const names = []; let after = null;
+  do {
+    const d = await shopifyGraphQL(q, { after });
+    for (const p of d.products.nodes) { const n = nameFromTitle(p.title); if (n) names.push(n); }
+    after = d.products.pageInfo.hasNextPage ? d.products.pageInfo.endCursor : null;
+  } while (after);
+  return names;
+}
+
 console.log(`→ add-from-url-deduped (writes ${execute ? 'ON' : 'OFF'}${publish ? ', PUBLISH/ACTIVE' : ''})`);
 console.log(`  collection : "${collectionName}"`);
 urls.forEach((u, i) => console.log(`  url ${i + 1}      : ${u}`));
@@ -98,10 +110,14 @@ if (occasion) console.log(`  occasion   : titles/SEO will include "${occasion}"`
 console.log('');
 
 // 1) Fingerprint the existing collection (image identity + names in use).
-const { tokenToTitle, names: existingNames, collId, collTitle } = await fetchExisting(collectionName);
+const { tokenToTitle, collId, collTitle } = await fetchExisting(collectionName);
+// Seed the allocator from EVERY product name in the store so new products never
+// reuse a name (avoids store-wide naming confusion and SKU collisions).
+const storeNames = await fetchAllProductNames();
 console.log(collId
-  ? `Existing collection: ${collTitle} (${collId}); ${tokenToTitle.size} image fingerprints, ${existingNames.length} names in use.\n`
-  : `Collection "${collectionName}" does not exist yet — it will be created on --execute.\n`);
+  ? `Existing collection: ${collTitle} (${collId}); ${tokenToTitle.size} image fingerprints.`
+  : `Collection "${collectionName}" does not exist yet — it will be created on --execute.`);
+console.log(`Store-wide names reserved: ${new Set(storeNames.map((n) => n.toLowerCase())).size}\n`);
 
 // 2) Scrape every URL, tagging each item with its source URL.
 const items = [];
@@ -114,7 +130,7 @@ for (const url of urls) {
 console.log('');
 
 // 3) Classify across the whole batch (existing + cross-URL + within-URL dedup).
-const allocator = makeNameAllocator(existingNames); // unique vs the collection
+const allocator = makeNameAllocator(storeNames); // unique vs every existing product
 const survivors = [];
 const skipped = [];
 const held = [];
