@@ -30,7 +30,7 @@ import { buildProductSetOperation } from '../src/shopify/payload-builder.js';
 import { shopifyGraphQL } from '../src/shopify/client.js';
 
 // --- arg parsing: flags (some take a value) + positional URLs ----------------
-const VALUE_FLAGS = new Set(['--collection', '--occasion', '--limit']);
+const VALUE_FLAGS = new Set(['--collection', '--occasion', '--limit', '--source-currency']);
 const BOOL_FLAGS = new Set(['--execute', '--publish', '--include-no-color', '--no-occasion', '--skip-failed']);
 const opts = {}; const urls = [];
 for (let i = 2; i < process.argv.length; i++) {
@@ -44,6 +44,7 @@ const collectionName = opts.collection;
 const occasion = opts.occasion;            // explicit keyword override (else derived from collection)
 const noOccasion = !!opts['no-occasion'];  // opt out of the collection-keyword rule for this run
 const skipFailed = !!opts['skip-failed'];  // skip QA-failing products instead of aborting the batch
+const sourceCurrency = opts['source-currency']; // force source currency (e.g. USD) for FX
 const limit = opts.limit ? Number(opts.limit) : undefined; // per-URL cap
 const includeNoColor = !!opts['include-no-color'];
 const execute = !!opts.execute;
@@ -151,7 +152,7 @@ for (const { raw, url } of items) {
   if (runHit) { skipped.push({ raw, url, reason: `duplicate of "${seenThisRun.get(runHit)}" earlier in this run` }); stat.skipped++; continue; }
   if (tokens.length === 0) { skipped.push({ raw, url, reason: 'no images to fingerprint (skipped to be safe)' }); stat.skipped++; continue; }
 
-  const { input, unverifiedImages, notes } = mapApifyToInput(raw, { trustImages: true, linkage, referenceUrl: url, group: collectionName });
+  const { input, unverifiedImages, notes } = mapApifyToInput(raw, { trustImages: true, linkage, referenceUrl: url, group: collectionName, sourceCurrency });
 
   // Hold products with no real color AND no pattern (-> ["Default"]).
   if (input.colors.length === 1 && input.colors[0] === 'Default' && !includeNoColor) {

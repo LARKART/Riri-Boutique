@@ -168,7 +168,8 @@ export function mapApifyToInput(raw, opts = {}) {
   const attributes = {};
   // Length inference from the source title (spec §5.1/§12). If none is found the
   // title builder fails the product downstream — a length is never omitted.
-  const length = detectLength(raw.title) || (isDress ? detectLength((raw.tags || []).join(' ')) : null);
+  const length = detectLength(raw.title) ||
+    (isDress ? detectLength(`${tagStr} ${raw.productType || raw.product_type || ''}`) : null);
   if (length) attributes.length = length;
   const neckline = firstMatch(raw.title, NECKLINES); if (neckline) attributes.neckline = neckline;
   const sleeve = firstMatch(raw.title, SLEEVES); if (sleeve) attributes.sleeve = sleeve;
