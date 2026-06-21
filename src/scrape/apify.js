@@ -54,11 +54,24 @@ export async function scrapeProducts(targetUrl, opts = {}) {
  * @param {string} handle product handle
  * @returns {Promise<object>} the raw Shopify product (variants+images+options)
  */
-export async function fetchShopifyProductJson(origin, handle) {
+export async function fetchShopifyProductJson(origin, handle, { retries = 3 } = {}) {
   const u = `${String(origin).replace(/\/$/, '')}/products/${handle}.json`;
-  const res = await fetch(u);
-  if (!res.ok) throw new Error(`products.json fetch failed (HTTP ${res.status}) for ${handle}`);
-  const body = await res.json();
-  if (!body?.product) throw new Error(`products.json had no product for ${handle}`);
-  return body.product;
+  let lastErr;
+  // Retry with backoff: bulk runs make many rapid requests and the source store
+  // throttles/drops some (429/5xx/network). A dropped linkage fetch loses the
+  // per-color image mapping, so a transient failure must not become a publish skip.
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(u);
+      if (res.status === 429 || res.status >= 500) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(`products.json fetch failed (HTTP ${res.status}) for ${handle}`);
+      const body = await res.json();
+      if (!body?.product) throw new Error(`products.json had no product for ${handle}`);
+      return body.product;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) await new Promise((r) => setTimeout(r, 400 * 2 ** attempt)); // 0.4s,0.8s,1.6s
+    }
+  }
+  throw lastErr;
 }
