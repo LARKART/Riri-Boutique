@@ -145,7 +145,9 @@ console.log(`Store index: ${tokenMap.size} image fingerprints, ${new Set(storeNa
 // 2) Scrape every URL, tagging each item with its source URL.
 const items = [];
 for (const url of urls) {
-  const { items: got } = await scrapeProducts(url, { actorInput: { startUrls: [{ url }], ...(limit ? { maxItems: limit } : {}) } });
+  // Default to a high maxItems so an uncapped run scrapes the whole collection
+  // (the actor otherwise defaults to ~100, silently truncating large sources).
+  const { items: got } = await scrapeProducts(url, { actorInput: { startUrls: [{ url }], maxItems: limit || 250 } });
   const slice = limit ? got.slice(0, limit) : got;
   slice.forEach((raw) => items.push({ raw, url }));
   console.log(`Scraped ${slice.length} from ${url}`);
