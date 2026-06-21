@@ -13,6 +13,7 @@ import { productCode } from '../transform/sku.js';
 import { isAllowedColor } from '../normalize/colors.js';
 import { isPattern } from '../normalize/patterns.js';
 import { hasLengthToken } from '../transform/lengths.js';
+import { collectionKeyword, titleHasKeyword } from '../transform/occasion.js';
 import { DRESS_CATEGORY_GID } from '../transform/taxonomy.js';
 import { FEED_NAMESPACE } from '../transform/feed.js';
 
@@ -75,6 +76,15 @@ export function checkProductQA(draft, opts = {}) {
     errors.push(`Title "${draft.title}" is missing a length token (Midi/Maxi/etc.).`);
   }
 
+  // 3b) Title carries the collection's occasion keyword (e.g. "Summer"), unless
+  // the run opted out via requireCollectionKeyword:false.
+  if (opts.requireCollectionKeyword !== false) {
+    const kw = collectionKeyword(draft.collection?.title);
+    if (kw && !titleHasKeyword(draft.title, kw)) {
+      errors.push(`Title "${draft.title}" is missing the collection keyword "${kw}".`);
+    }
+  }
+
   // 4) Every color option value is a real, allowed color OR a recognized pattern.
   const colorOption = (draft.options || []).find((o) => /colou?r/i.test(o.name || ''));
   const colorValues = colorOption?.values || [];
@@ -127,7 +137,7 @@ export function checkProductQA(draft, opts = {}) {
  * @param {object[]} drafts
  * @returns {Array<{draft: object, ok: boolean, errors: string[]}>}
  */
-export function runQAGate(drafts) {
+export function runQAGate(drafts, opts = {}) {
   const runNames = drafts.map((d) => d?.name).filter(Boolean);
-  return drafts.map((draft) => ({ draft, ...checkProductQA(draft, { runNames }) }));
+  return drafts.map((draft) => ({ draft, ...checkProductQA(draft, { runNames, requireCollectionKeyword: opts.requireCollectionKeyword }) }));
 }

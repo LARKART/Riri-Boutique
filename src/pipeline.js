@@ -26,6 +26,7 @@ import { ensureCollection, addProductsToCollection } from './shopify/collections
 import { publishToSalesChannels, verifyPublished } from './shopify/publish.js';
 import { makeNameAllocator } from './content/names.js';
 import { runQAGate } from './validate/qaGate.js';
+import { collectionKeyword, insertKeywordBeforeLength } from './transform/occasion.js';
 
 /**
  * Build the canonical ProductDraft for one input product.
@@ -47,9 +48,24 @@ export async function buildProductDraft(input, deps = {}) {
 
   const draft = { ...input, attributes: input.attributes || {} };
 
+  // Collection occasion keyword (e.g. "Summer Dresses" -> "Summer"): inject into
+  // the title's occasion slot so the title (and SEO) carry the collection term.
+  // Enabled by default; deps.collectionOccasion === false opts a run out, and
+  // deps.occasionOverride forces a specific keyword.
+  if (deps.collectionOccasion !== false && draft.isDress) {
+    const kw = deps.occasionOverride || collectionKeyword(draft.group);
+    if (kw) draft.attributes = { ...draft.attributes, occasion: kw };
+  }
+  const occasionKw = draft.attributes.occasion;
+
   // Stage 6 — AI content (invented name, original description, SEO).
   const content = await generate(draft);
   draft.name = draft.name || content.name; // keep an author-supplied name if present
+
+  // Guarantee the SEO title also carries the keyword (model copy may omit it).
+  if (occasionKw && content.seo?.title) {
+    content.seo.title = insertKeywordBeforeLength(content.seo.title, occasionKw);
+  }
 
   // Stage 5/4 — title (deterministic) + variant matrix (price/compareAt/SKU).
   // FX conversion (spec §13) applies when source currency != store currency.
@@ -143,7 +159,11 @@ export async function finalizeProduct(productId, draft, opts = {}) {
 export async function runProduct(input, opts = {}) {
   // Decide the authoritative name up front so title, SKU, and copy all agree.
   const named = { ...input, name: makeNameAllocator().take(input.name) };
-  const draft = await buildProductDraft(named, opts.deps || {});
+  const draft = await buildProductDraft(named, {
+    ...(opts.deps || {}),
+    collectionOccasion: opts.collectionOccasion,
+    occasionOverride: opts.occasion,
+  });
   if (opts.collection) draft.collection.title = opts.collection; // dynamic routing override
   const collection = await ensureCollection(draft.collection.title); // verify or create
   const exec = await executeProductSet(draft, { status: resolveStatus(opts), collectionId: collection.id });
@@ -217,7 +237,11 @@ export async function runPipelineFromUrl(url, opts = {}) {
       }
       const { input, unverifiedImages, notes } = mapApifyToInput(raw, mapOpts);
       input.name = allocator.take(input.name); // authoritative, batch-unique
-      const draft = await buildProductDraft(input, opts.deps || {});
+      const draft = await buildProductDraft(input, {
+        ...(opts.deps || {}),
+        collectionOccasion: opts.collectionOccasion,
+        occasionOverride: opts.occasion,
+      });
       if (opts.collection) draft.collection.title = opts.collection; // dynamic routing override
       results.push({ input, draft, unverifiedImages, notes });
     } catch (err) {
@@ -228,7 +252,7 @@ export async function runPipelineFromUrl(url, opts = {}) {
   // Phase 2 — pre-publish QA gate (fail-closed). Validate every built draft;
   // attach per-product errors. Writes are blocked below if ANY product fails.
   const built = results.filter((r) => r.draft);
-  const gate = runQAGate(built.map((r) => r.draft));
+  const gate = runQAGate(built.map((r) => r.draft), { requireCollectionKeyword: opts.collectionOccasion !== false });
   built.forEach((r, i) => { r.qa = gate[i]; if (!gate[i].ok) r.qaErrors = gate[i].errors; });
   const qaFailed = results.some((r) => r.qaErrors) || results.some((r) => r.buildError);
 

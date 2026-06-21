@@ -31,7 +31,7 @@ import { shopifyGraphQL } from '../src/shopify/client.js';
 
 // --- arg parsing: flags (some take a value) + positional URLs ----------------
 const VALUE_FLAGS = new Set(['--collection', '--occasion', '--limit']);
-const BOOL_FLAGS = new Set(['--execute', '--publish', '--include-no-color']);
+const BOOL_FLAGS = new Set(['--execute', '--publish', '--include-no-color', '--no-occasion']);
 const opts = {}; const urls = [];
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
@@ -41,7 +41,8 @@ for (let i = 2; i < process.argv.length; i++) {
   else urls.push(a);
 }
 const collectionName = opts.collection;
-const occasion = opts.occasion;            // optional title/SEO occasion alignment
+const occasion = opts.occasion;            // explicit keyword override (else derived from collection)
+const noOccasion = !!opts['no-occasion'];  // opt out of the collection-keyword rule for this run
 const limit = opts.limit ? Number(opts.limit) : undefined; // per-URL cap
 const includeNoColor = !!opts['include-no-color'];
 const execute = !!opts.execute;
@@ -158,9 +159,9 @@ for (const { raw, url } of items) {
 
   tokens.forEach((t) => seenThisRun.set(t, raw.title));
   try {
-    if (occasion && input.isDress) input.attributes = { ...(input.attributes || {}), occasion };
+    input.group = collectionName; // so the collection keyword is derived correctly
     input.name = allocator.take(input.name);
-    const draft = await buildProductDraft(input);
+    const draft = await buildProductDraft(input, { collectionOccasion: !noOccasion, occasionOverride: occasion });
     draft.collection.title = collectionName;
     survivors.push({ raw, url, input, draft, notes, unverifiedImages });
     stat.added++;
@@ -170,7 +171,7 @@ for (const { raw, url } of items) {
 }
 
 // 4) Pre-publish QA gate.
-const gate = runQAGate(survivors.map((s) => s.draft));
+const gate = runQAGate(survivors.map((s) => s.draft), { requireCollectionKeyword: !noOccasion });
 survivors.forEach((s, i) => { s.qa = gate[i]; });
 const qaFailed = gate.some((g) => !g.ok);
 
