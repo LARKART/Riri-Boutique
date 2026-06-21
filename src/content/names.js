@@ -25,11 +25,19 @@ const SYNTH_PREFIXES = ['Av', 'Ser', 'Mar', 'Cel', 'Ev', 'Lir', 'No', 'Cal', 'Ve
   'Am', 'Sor', 'Tha', 'Lin', 'Cos', 'Del', 'Iso', 'Rhe', 'Mir', 'Sol'];
 const SYNTH_SUFFIXES = ['elle', 'ine', 'ora', 'ina', 'enne', 'aris', 'ela', 'ette', 'ana', 'een'];
 
-/** Deterministically synthesize a brand-style name for index i. */
+/**
+ * Deterministically synthesize a brand-style name for index i. UNBOUNDED: after
+ * the prefix×suffix combos are exhausted it appends an incrementing number, so a
+ * fresh unique name always exists no matter how large the store grows (otherwise
+ * the allocator's "find a free name" loop can spin forever — a real bug once the
+ * store outgrows the base combos).
+ */
 function synthesize(i) {
+  const combos = SYNTH_PREFIXES.length * SYNTH_SUFFIXES.length;
   const p = SYNTH_PREFIXES[i % SYNTH_PREFIXES.length];
   const s = SYNTH_SUFFIXES[Math.floor(i / SYNTH_PREFIXES.length) % SYNTH_SUFFIXES.length];
-  return p + s;
+  const round = Math.floor(i / combos); // 0 for the first pass, then 1, 2, …
+  return `${p}${s}${round ? round + 1 : ''}`;
 }
 
 /**
