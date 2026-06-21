@@ -31,7 +31,7 @@ import { shopifyGraphQL } from '../src/shopify/client.js';
 
 // --- arg parsing: flags (some take a value) + positional URLs ----------------
 const VALUE_FLAGS = new Set(['--collection', '--occasion', '--limit']);
-const BOOL_FLAGS = new Set(['--execute', '--publish', '--include-no-color', '--no-occasion']);
+const BOOL_FLAGS = new Set(['--execute', '--publish', '--include-no-color', '--no-occasion', '--skip-failed']);
 const opts = {}; const urls = [];
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
@@ -43,6 +43,7 @@ for (let i = 2; i < process.argv.length; i++) {
 const collectionName = opts.collection;
 const occasion = opts.occasion;            // explicit keyword override (else derived from collection)
 const noOccasion = !!opts['no-occasion'];  // opt out of the collection-keyword rule for this run
+const skipFailed = !!opts['skip-failed'];  // skip QA-failing products instead of aborting the batch
 const limit = opts.limit ? Number(opts.limit) : undefined; // per-URL cap
 const includeNoColor = !!opts['include-no-color'];
 const execute = !!opts.execute;
@@ -203,15 +204,25 @@ if (!execute) {
   process.exit(process.exitCode || 0);
 }
 
-// 7) Execute (only survivors) into the one collection.
-if (qaFailed) { console.log('\n⛔ QA gate failed — refusing to write anything (fail-closed).'); process.exit(1); }
-if (!survivors.length) { console.log('\nNothing new to add. Done.'); process.exit(0); }
+// 7) Execute into the one collection. By default the gate is fail-closed for the
+// whole batch; with --skip-failed, QA failures are skipped and the rest publish.
+const qaSkipped = survivors.filter((s) => !s.qa.ok);
+const toCreate = skipFailed ? survivors.filter((s) => s.qa.ok) : survivors;
+if (qaFailed && !skipFailed) {
+  console.log('\n⛔ QA gate failed — refusing to write anything (fail-closed). Re-run with --skip-failed to publish the passing ones.');
+  process.exit(1);
+}
+if (qaSkipped.length) {
+  console.log(`\n⚠️  Skipping ${qaSkipped.length} product(s) that FAILED the QA gate:`);
+  for (const s of qaSkipped) console.log(`  • ${s.draft.title} (source: ${s.raw.title}) — ${s.qa.errors.join('; ')}`);
+}
+if (!toCreate.length) { console.log('\nNothing to create. Done.'); process.exit(qaSkipped.length ? 1 : 0); }
 
 const collection = await ensureCollection(collectionName); // create-or-reuse
 const status = publish ? 'ACTIVE' : 'DRAFT';
-console.log(`\n→ Creating ${survivors.length} product(s) as ${status} in "${collection.title}"...`);
+console.log(`\n→ Creating ${toCreate.length} product(s) as ${status} in "${collection.title}"...`);
 const created = [];
-for (const s of survivors) {
+for (const s of toCreate) {
   try {
     const exec = await executeProductSet(s.draft, { status, collectionId: collection.id });
     await finalizeProduct(exec.product.id, s.draft, { publish, collection });
@@ -232,6 +243,6 @@ if (publish && created.length) {
     const v = byId.get(c.id); const ok = v?.live; if (!ok) notLive++;
     console.log(`  ${ok ? '✅' : '❌'} ${c.title} -> status=${v?.status} pub=${v?.publicationCount} publishedAt=${v?.publishedAt ? 'yes' : 'NO'}`);
   }
-  console.log(`\nLive ${created.length - notLive}/${created.length}.`);
-  if (notLive || created.length !== survivors.length) process.exitCode = 1;
+  console.log(`\nLive ${created.length - notLive}/${created.length} | QA-skipped ${qaSkipped.length} | create-errors ${toCreate.length - created.length}.`);
+  if (notLive || created.length !== toCreate.length) process.exitCode = 1;
 }
