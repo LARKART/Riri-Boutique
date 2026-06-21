@@ -16,6 +16,8 @@ export const OUTFIT_SETS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-11'
 export const SWIMWEAR_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-20';
 export const SANDALS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-8-6';
 export const SHOES_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-8';
+export const SHORTS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-14';
+export const BLOUSE_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-13-1';
 
 const TAXONOMY_SEARCH = `
   query TaxonomySearch($q: String!) {
@@ -47,6 +49,8 @@ export async function resolveCategory(draft, gql = shopifyGraphQL) {
   if (draft.isFootwear) {
     return { id: draft.footwearCategoryId || SHOES_CATEGORY_GID, fullName: 'Apparel & Accessories > Shoes' };
   }
+  if (draft.isShorts) return { id: SHORTS_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Shorts' };
+  if (draft.isTop) return { id: BLOUSE_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Clothing Tops > Blouses' };
   // Two-piece outfits / sets (and rompers grouped with them) use Outfit Sets,
   // never the Dresses category.
   if (draft.isSet) {

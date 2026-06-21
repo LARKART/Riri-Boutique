@@ -30,7 +30,7 @@ import { buildProductSetOperation } from '../src/shopify/payload-builder.js';
 import { shopifyGraphQL } from '../src/shopify/client.js';
 
 // --- arg parsing: flags (some take a value) + positional URLs ----------------
-const VALUE_FLAGS = new Set(['--collection', '--occasion', '--limit', '--source-currency']);
+const VALUE_FLAGS = new Set(['--collection', '--occasion', '--limit', '--source-currency', '--concurrency', '--require-kind']);
 const BOOL_FLAGS = new Set(['--execute', '--publish', '--include-no-color', '--no-occasion', '--skip-failed']);
 const opts = {}; const urls = [];
 for (let i = 2; i < process.argv.length; i++) {
@@ -45,6 +45,8 @@ const occasion = opts.occasion;            // explicit keyword override (else de
 const noOccasion = !!opts['no-occasion'];  // opt out of the collection-keyword rule for this run
 const skipFailed = !!opts['skip-failed'];  // skip QA-failing products instead of aborting the batch
 const sourceCurrency = opts['source-currency']; // force source currency (e.g. USD) for FX
+const concurrency = Math.max(1, Math.min(10, Number(opts.concurrency) || 6)); // parallel copy-gen (speed only)
+const requireKind = opts['require-kind']; // skip products that aren't this kind (polluted sources): top|shorts|dress|set|swim|footwear
 const limit = opts.limit ? Number(opts.limit) : undefined; // per-URL cap
 const includeNoColor = !!opts['include-no-color'];
 const execute = !!opts.execute;
@@ -63,6 +65,15 @@ function imageToken(u) {
 function tokensFrom(images) {
   return [...new Set((images || []).map((im) => imageToken(im.src || im.url || im)).filter(Boolean))];
 }
+/** Run async fn over items with a fixed concurrency limit (order-independent). */
+async function mapPool(items, limit, fn) {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) { const idx = i++; await fn(items[idx], idx); }
+  });
+  await Promise.all(workers);
+}
+
 /** Product name = the part after " | " in the generated title. */
 function nameFromTitle(title) {
   const t = String(title || '');
@@ -141,12 +152,24 @@ for (const url of urls) {
 }
 console.log('');
 
-// 3) Classify across the whole batch (store-wide + cross-URL + within-URL dedup).
+// Per-source currency (handles mixed-currency merges, e.g. CAD + USD): explicit
+// --source-currency wins, else read the shop's meta.json, else default in mapper.
+const urlCurrency = new Map();
+for (const url of urls) {
+  let cur = sourceCurrency;
+  if (!cur) { try { const m = await (await fetch(`${new URL(url).origin}/meta.json`)).json(); if (/^(CAD|USD)$/i.test(m.currency)) cur = m.currency.toUpperCase(); } catch { /* */ } }
+  urlCurrency.set(url, cur);
+}
+console.log(`Source currencies: ${[...urlCurrency].map(([u, c]) => `${new URL(u).host}=${c || 'auto'}`).join(', ')}\n`);
+
+// 3) Classify the batch — SEQUENTIAL so dedup/link/hold/name allocation stay
+// ordered and exactly as strict (no concurrency races on these decisions).
 const allocator = makeNameAllocator(storeNames); // unique vs every existing product
 const survivors = [];
 const skipped = [];
 const held = [];
 const linked = []; // already exist elsewhere in the store -> link into this collection, don't duplicate
+const toBuild = []; // passed dedup; copy generation happens in parallel below
 const seenThisRun = new Map(); // token -> source title (cross+within-URL dedup)
 const perUrl = new Map(urls.map((u) => [u, { scraped: 0, added: 0, linked: 0, skipped: 0, held: 0 }]));
 for (const { raw, url } of items) {
@@ -166,7 +189,14 @@ for (const { raw, url } of items) {
   if (runHit) { skipped.push({ raw, url, reason: `duplicate of "${seenThisRun.get(runHit)}" earlier in this run` }); stat.skipped++; continue; }
   if (tokens.length === 0) { skipped.push({ raw, url, reason: 'no images to fingerprint (skipped to be safe)' }); stat.skipped++; continue; }
 
-  const { input, unverifiedImages, notes } = mapApifyToInput(raw, { trustImages: true, linkage, referenceUrl: url, group: collectionName, sourceCurrency });
+  const { input, unverifiedImages, notes } = mapApifyToInput(raw, { trustImages: true, linkage, referenceUrl: url, group: collectionName, sourceCurrency: urlCurrency.get(url) });
+
+  // Pollution filter: drop products that aren't the expected kind (e.g. a slipper
+  // in a Blouses source). Reported so nothing slips through silently.
+  if (requireKind) {
+    const kind = { top: input.isTop, shorts: input.isShorts, dress: input.isDress, set: input.isSet, swim: input.isSwim, footwear: input.isFootwear }[requireKind];
+    if (!kind) { skipped.push({ raw, url, reason: `not a ${requireKind} (source pollution; detected "${input.productType}")` }); stat.skipped++; continue; }
+  }
 
   // Hold products with no real color AND no pattern (-> ["Default"]).
   if (input.colors.length === 1 && input.colors[0] === 'Default' && !includeNoColor) {
@@ -174,19 +204,28 @@ for (const { raw, url } of items) {
   }
 
   tokens.forEach((t) => seenThisRun.set(t, raw.title));
-  try {
-    input.group = collectionName; // so the collection keyword is derived correctly
-    input.name = allocator.take(input.name);
-    const draft = await buildProductDraft(input, { collectionOccasion: !noOccasion, occasionOverride: occasion });
-    draft.collection.title = collectionName;
-    survivors.push({ raw, url, input, draft, notes, unverifiedImages });
-    stat.added++;
-  } catch (err) {
-    skipped.push({ raw, url, reason: `build failed: ${err.message}` }); stat.skipped++;
-  }
+  input.group = collectionName; // so the collection keyword is derived correctly
+  input.name = allocator.take(input.name);
+  toBuild.push({ raw, url, input, notes, unverifiedImages });
 }
 
-// 4) Pre-publish QA gate.
+// 3b) Generate copy in PARALLEL — speed only. Dedup/naming already done above;
+// every draft still goes through the full QA gate below, unchanged.
+console.log(`Generating copy for ${toBuild.length} product(s) with concurrency ${concurrency}...`);
+await mapPool(toBuild, concurrency, async (s) => {
+  try {
+    const draft = await buildProductDraft(s.input, { collectionOccasion: !noOccasion, occasionOverride: occasion });
+    draft.collection.title = collectionName;
+    s.draft = draft;
+    survivors.push(s);
+    perUrl.get(s.url).added++;
+  } catch (err) {
+    skipped.push({ raw: s.raw, url: s.url, reason: `build failed: ${err.message}` });
+    perUrl.get(s.url).skipped++;
+  }
+});
+
+// 4) Pre-publish QA gate — runs on EVERY built draft, identical to sequential mode.
 const gate = runQAGate(survivors.map((s) => s.draft), { requireCollectionKeyword: !noOccasion });
 survivors.forEach((s, i) => { s.qa = gate[i]; });
 const qaFailed = gate.some((g) => !g.ok);

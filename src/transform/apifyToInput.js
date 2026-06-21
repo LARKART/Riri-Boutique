@@ -90,6 +90,16 @@ function normalizeFootwearSize(v) {
   return String(n); // already US/CA; drops trailing ".0" and the country label
 }
 
+/** Shorts garment-type noun with style baked in (style only when source says so). */
+function detectShorts(text) {
+  const t = String(text || '');
+  const STYLE_RES = [['Denim', /\bdenim\b/i], ['High Waist', /\bhigh[-\s]?waist(ed)?\b/i], ['Cargo', /\bcargo\b/i],
+    ['Bermuda', /\bbermuda\b/i], ['Linen', /\blinen\b/i], ['Paperbag', /\bpaper[-\s]?bag\b/i], ['Pleated', /\bpleated\b/i],
+    ['Biker', /\bbiker\b/i], ['Drawstring', /\bdrawstring\b/i], ['Tailored', /\btailored\b/i], ['Athletic', /\bathletic\b/i]];
+  const styles = STYLE_RES.filter(([, re]) => re.test(t)).map(([c]) => c).slice(0, 2);
+  return `${styles.length ? styles.join(' ') + ' ' : ''}Shorts`;
+}
+
 /** Title-case a free color label we keep verbatim (unknown-but-real colors). */
 function cleanColorLabel(s) {
   return stripStockSuffix(s).replace(/\s+/g, ' ').split(' ').map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ');
@@ -171,12 +181,18 @@ export function mapApifyToInput(raw, opts = {}) {
   const isSet = !isDress && !isSwim && !isFootwear &&
     (/\b(sets?|two[-\s]?piece|romper|jumpsuit|co[-\s]?ord)\b/i.test(raw.title || '') ||
      /\b(sets?|two[-\s]?piece|co[-\s]?ord)\b/i.test(tagStr));
+  const otherText = `${raw.title || ''} ${typeStr}`;
+  const isShorts = !isDress && !isSwim && !isFootwear && !isSet && /\bshorts?\b/i.test(otherText);
+  const isTop = !isDress && !isSwim && !isFootwear && !isSet && !isShorts &&
+    /\b(blouse|shirt|tops?|tee|t[-\s]?shirt|tank|cami(?:sole)?|tunic|peplum|bodysuit|crop\s*top)\b/i.test(otherText);
   const swim = isSwim ? detectSwimType(`${raw.title || ''} ${typeStr}`) : null;
   const foot = isFootwear ? detectFootwear(`${raw.title || ''} ${typeStr} ${tagStr}`) : null;
   const productType = isDress ? 'Dress'
     : isSwim ? swim.noun
     : isFootwear ? foot.noun
     : isSet ? detectSetType(raw.title)
+    : isShorts ? detectShorts(otherText)
+    : isTop ? 'Blouse'
     : (raw.productType || (Array.isArray(raw.tags) ? raw.tags[0] : undefined) || 'Product');
 
   // Options from variants (this actor has no top-level options array).
@@ -236,7 +252,7 @@ export function mapApifyToInput(raw, opts = {}) {
   // and clothing attributes (neckline/silhouette/length) don't apply to shoes.
   const attributes = {};
   let occasion = null;
-  if (!isFootwear) {
+  if (!isFootwear && !isShorts) {
     // Length inference from the source title (spec §5.1/§12). If none is found the
     // title builder fails the product downstream — a length is never omitted.
     const length = detectLength(raw.title) ||
@@ -264,6 +280,8 @@ export function mapApifyToInput(raw, opts = {}) {
   if (isSet) input.isSet = true;
   if (isSwim) { input.isSwim = true; input.swimCategoryId = swim.cat; }
   if (isFootwear) { input.isFootwear = true; input.footwearCategoryId = foot.cat; }
+  if (isShorts) input.isShorts = true;
+  if (isTop) input.isTop = true;
   if (Object.keys(attributes).length) input.attributes = attributes;
   if (variantOverrides.length) input.variantOverrides = variantOverrides;
 
