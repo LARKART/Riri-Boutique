@@ -90,11 +90,12 @@ export function checkProductQA(draft, opts = {}) {
     }
   }
 
-  // 4) Every color option value is a real, allowed color OR a recognized pattern.
+  // 4) Color option values must be non-empty (we read real colors from the
+  // source and keep them verbatim; patterns are handled via the feed below).
   const colorOption = (draft.options || []).find((o) => /colou?r/i.test(o.name || ''));
   const colorValues = colorOption?.values || [];
   for (const c of colorValues) {
-    if (!isAllowedColor(c) && !isPattern(c)) errors.push(`Color "${c}" is not an allowed color or pattern value.`);
+    if (!String(c || '').trim()) errors.push('Empty color option value.');
   }
   // Pattern products must carry feed attributes: `pattern` always; and `color`
   // (base color override) when the option is entirely patterns.

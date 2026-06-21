@@ -38,6 +38,20 @@ function detectSetType(title) {
   return 'Two Piece Set';
 }
 
+// Swimwear garment-type token + matching Shopify taxonomy node.
+function detectSwimType(text) {
+  const t = String(text || '').toLowerCase();
+  if (/one[-\s]?piece|monokini/.test(t)) return { noun: 'One Piece Swimsuit', cat: 'gid://shopify/TaxonomyCategory/aa-1-20-22' };
+  if (/tankini/.test(t)) return { noun: 'Tankini', cat: 'gid://shopify/TaxonomyCategory/aa-1-20' };
+  if (/bikini/.test(t)) return { noun: 'Bikini', cat: 'gid://shopify/TaxonomyCategory/aa-1-20-6' };
+  return { noun: 'Swimsuit', cat: 'gid://shopify/TaxonomyCategory/aa-1-20' };
+}
+
+/** Title-case a free color label we keep verbatim (unknown-but-real colors). */
+function cleanColorLabel(s) {
+  return String(s).trim().replace(/\s+/g, ' ').split(' ').map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ');
+}
+
 function uniq(values) {
   const seen = new Set(); const out = [];
   for (const v of values) { const s = String(v).trim(); const k = s.toLowerCase(); if (s && !seen.has(k)) { seen.add(k); out.push(s); } }
@@ -100,40 +114,43 @@ export function mapApifyToInput(raw, opts = {}) {
   const variants = Array.isArray(raw.variants) ? raw.variants : [];
 
   const tagStr = Array.isArray(raw.tags) ? raw.tags.join(' ') : String(raw.tags || '');
+  const typeStr = raw.product_type || raw.productType || '';
   const isDress = /\bdress(es)?\b/i.test(raw.title || '') ||
     /\bdress(es)?\b/i.test(tagStr) ||
-    /dress/i.test(raw.productType || '');
-  // Two-piece outfits / rompers / jumpsuits — classified as sets (never dresses).
-  const isSet = !isDress &&
+    /dress/i.test(typeStr);
+  // Swimwear takes precedence over sets (a bikini is a "set" but is swimwear).
+  const swimText = `${raw.title || ''} ${tagStr} ${typeStr}`;
+  const isSwim = !isDress && /\b(bikini|tankini|one[-\s]?piece|swimsuit|swimwear|bathing\s*suit|monokini)\b/i.test(swimText);
+  // Two-piece outfits / rompers / jumpsuits — classified as sets (never dresses/swim).
+  const isSet = !isDress && !isSwim &&
     (/\b(sets?|two[-\s]?piece|romper|jumpsuit|co[-\s]?ord)\b/i.test(raw.title || '') ||
      /\b(sets?|two[-\s]?piece|co[-\s]?ord)\b/i.test(tagStr));
+  const swim = isSwim ? detectSwimType(`${raw.title || ''} ${typeStr}`) : null;
   const productType = isDress ? 'Dress'
+    : isSwim ? swim.noun
     : isSet ? detectSetType(raw.title)
     : (raw.productType || (Array.isArray(raw.tags) ? raw.tags[0] : undefined) || 'Product');
 
   // Options from variants (this actor has no top-level options array).
   const cls = classifyOptions(variants);
 
-  // Color/pattern allowlist: keep real colors AND recognized patterns (Floral,
-  // Polka Dot, …) as storefront option values; only truly unknown values are
-  // dropped. Patterns are tracked so the Google feed can carry pattern + an
-  // inferred base color (see below).
+  // Read REAL colors from the source — never drop a colorway (that would lose a
+  // variant). Recognized colors are normalized; recognized patterns (Floral,
+  // Polka Dot, Camouflage, …) keep their source label AND are tracked so the
+  // feed can carry a pattern attribute + inferred base color; anything else
+  // (e.g. "Peacock Blue") is kept verbatim as a storefront color label.
   const keptColors = [];
-  const droppedColors = [];
   const patternsFound = [];
   for (const c of cls.colors) {
     const norm = normalizeColorName(c);
     if (norm) { keptColors.push(norm); continue; }
     const pat = normalizePattern(c);
-    if (pat) { keptColors.push(pat); patternsFound.push(pat); continue; }
-    droppedColors.push(c);
+    if (pat) { keptColors.push(cleanColorLabel(c)); patternsFound.push(pat); continue; }
+    keptColors.push(cleanColorLabel(c));
   }
   let colors = uniq(keptColors);
   const patterns = uniq(patternsFound);
   let sizes = cls.sizes;
-  if (droppedColors.length) {
-    notes.push(`Dropped non-color/non-pattern option value(s): ${droppedColors.join(', ')} (not recognized).`);
-  }
   if (colors.length === 0) { colors = ['Default']; notes.push('No color option detected; defaulted to "Default".'); }
   if (sizes.length === 0) { sizes = ['One Size']; notes.push('No size option detected; defaulted to "One Size".'); }
 
@@ -190,6 +207,7 @@ export function mapApifyToInput(raw, opts = {}) {
     sizes,
   };
   if (isSet) input.isSet = true;
+  if (isSwim) { input.isSwim = true; input.swimCategoryId = swim.cat; }
   if (Object.keys(attributes).length) input.attributes = attributes;
   if (variantOverrides.length) input.variantOverrides = variantOverrides;
 

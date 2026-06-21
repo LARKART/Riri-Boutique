@@ -31,6 +31,7 @@ const PATTERNS = [
   [/\bwatercolou?r\b/i, 'Watercolor'],
   [/\bbotanical\b/i, 'Botanical'],
   [/\bhoundstooth\b/i, 'Houndstooth'],
+  [/\bcamo(uflage)?\b/i, 'Camouflage'],
   [/\bprinted?\b/i, 'Print'],
 ];
 
