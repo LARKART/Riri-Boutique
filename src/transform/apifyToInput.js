@@ -25,7 +25,7 @@ const SILHOUETTES = ['A-Line', 'Bodycon', 'Slip', 'Wrap', 'Pleated', 'Draped', '
 const OCCASIONS = [['wedding guest', 'Wedding Guest'], ['bridesmaid', 'Bridesmaid'], ['cocktail', 'Cocktail'],
   ['formal', 'Formal'], ['prom', 'Prom'], ['party', 'Party'], ['vacation', 'Vacation'], ['evening', 'Evening']];
 
-const SIZE_RE = /^(xxs|xs|s|m|l|xl|2xl|3xl|4xl|5xl|xxl|xxxl|one size|os|\d{1,2}|(us|uk|eu|au)\s?\d+|.*\((xxs|xs|s|m|l|xl|2xl|3xl|4xl|5xl|xxl|xxxl)\))$/i;
+const SIZE_RE = /^(?:xxs|xs|s|m|l|xl|2xl|3xl|4xl|5xl|xxl|xxxl|one size|os|(?:us|uk|eu|au)?\s?\d{1,2}(?:\.\d)?\s?(?:us|uk|eu|au)?|\d{1,2}(?:\.\d)?\s?[–-]\s?\d{1,2}(?:\.\d)?\s?(?:us|uk|eu|au)?|.*\((?:xxs|xs|s|m|l|xl|2xl|3xl|4xl|5xl|xxl|xxxl)\))$/i;
 
 /** Garment-type token for a two-piece set / one-piece outfit, from the title. */
 function detectSetType(title) {
@@ -46,6 +46,28 @@ function detectSwimType(text) {
   if (/tankini/.test(t)) return { noun: 'Tankini Set', cat: 'gid://shopify/TaxonomyCategory/aa-1-20' };
   if (/bikini/.test(t)) return { noun: 'Bikini Set', cat: 'gid://shopify/TaxonomyCategory/aa-1-20-6' };
   return { noun: 'Swimsuit', cat: 'gid://shopify/TaxonomyCategory/aa-1-20' };
+}
+
+// Footwear garment-type noun (with Orthopedic + style baked in) + taxonomy node.
+// "Orthopedic" is kept only when the source actually says so (never invented).
+function detectFootwear(text) {
+  const t = String(text || '');
+  const base = /sandals?/i.test(t) ? { n: 'Sandals', cat: 'aa-8-6' }
+    : /(sneakers?|trainers?)/i.test(t) ? { n: 'Sneakers', cat: 'aa-8-1' }
+    : /boots?/i.test(t) ? { n: 'Boots', cat: 'aa-8' }
+    : /espadrilles?/i.test(t) ? { n: 'Espadrilles', cat: 'aa-8' }
+    : /loafers?/i.test(t) ? { n: 'Loafers', cat: 'aa-8' }
+    : /(heels?|pumps?)/i.test(t) ? { n: 'Heels', cat: 'aa-8' }
+    : { n: 'Shoes', cat: 'aa-8' };
+  const STYLE_RES = [['Platform', /\bplatform\b/i], ['Wedge', /\bwedges?\b/i], ['Heeled', /\bheel(ed)?\b/i],
+    ['Espadrille', /\bespadrilles?\b/i], ['Slingback', /\bslingback\b/i], ['Gladiator', /\bgladiator\b/i],
+    ['Strappy', /\bstrappy\b/i], ['Ankle Strap', /\bankle[-\s]?strap\b/i], ['T-Strap', /\bt[-\s]?strap\b/i],
+    ['Slide', /\bslides?\b/i], ['Mule', /\bmules?\b/i], ['Thong', /\bthong\b/i], ['Flat', /\bflats?\b/i], ['Buckle', /\bbuckle\b/i]];
+  let styles = STYLE_RES.filter(([, re]) => re.test(t)).map(([c]) => c);
+  styles = styles.filter((s) => s.toLowerCase() !== base.n.toLowerCase().replace(/s$/, '')).slice(0, 2);
+  const orth = /orthop(a)?edic/i.test(t);
+  const noun = `${orth ? 'Orthopedic ' : ''}${styles.length ? styles.join(' ') + ' ' : ''}${base.n}`;
+  return { noun, cat: `gid://shopify/TaxonomyCategory/${base.cat}` };
 }
 
 /** Title-case a free color label we keep verbatim (unknown-but-real colors). */
@@ -122,13 +144,18 @@ export function mapApifyToInput(raw, opts = {}) {
   // Swimwear takes precedence over sets (a bikini is a "set" but is swimwear).
   const swimText = `${raw.title || ''} ${tagStr} ${typeStr}`;
   const isSwim = !isDress && /\b(bikini|tankini|one[-\s]?piece|swimsuit|swimwear|bathing\s*suit|monokini)\b/i.test(swimText);
-  // Two-piece outfits / rompers / jumpsuits — classified as sets (never dresses/swim).
-  const isSet = !isDress && !isSwim &&
+  // Footwear (sandals/heels/sneakers/…) — its own category + title rules.
+  const isFootwear = !isDress && !isSwim &&
+    /\b(sandals?|shoes?|sneakers?|trainers?|boots?|heels?|wedges?|espadrilles?|mules?|loafers?|flip[-\s]?flops?|slides?|pumps?|clogs?)\b/i.test(`${raw.title || ''} ${typeStr}`);
+  // Two-piece outfits / rompers / jumpsuits — classified as sets (never dresses/swim/footwear).
+  const isSet = !isDress && !isSwim && !isFootwear &&
     (/\b(sets?|two[-\s]?piece|romper|jumpsuit|co[-\s]?ord)\b/i.test(raw.title || '') ||
      /\b(sets?|two[-\s]?piece|co[-\s]?ord)\b/i.test(tagStr));
   const swim = isSwim ? detectSwimType(`${raw.title || ''} ${typeStr}`) : null;
+  const foot = isFootwear ? detectFootwear(`${raw.title || ''} ${typeStr} ${tagStr}`) : null;
   const productType = isDress ? 'Dress'
     : isSwim ? swim.noun
+    : isFootwear ? foot.noun
     : isSet ? detectSetType(raw.title)
     : (raw.productType || (Array.isArray(raw.tags) ? raw.tags[0] : undefined) || 'Product');
 
@@ -183,18 +210,23 @@ export function mapApifyToInput(raw, opts = {}) {
   }
 
   // Attributes parsed from the title (+ occasion from tags). Only when present.
+  // Skipped for footwear — its descriptors (style/orthopedic) live in productType,
+  // and clothing attributes (neckline/silhouette/length) don't apply to shoes.
   const attributes = {};
-  // Length inference from the source title (spec §5.1/§12). If none is found the
-  // title builder fails the product downstream — a length is never omitted.
-  const length = detectLength(raw.title) ||
-    (isDress ? detectLength(`${tagStr} ${raw.productType || raw.product_type || ''}`) : null);
-  if (length) attributes.length = length;
-  const neckline = firstMatch(raw.title, NECKLINES); if (neckline) attributes.neckline = neckline;
-  const sleeve = firstMatch(raw.title, SLEEVES); if (sleeve) attributes.sleeve = sleeve;
-  const silhouette = firstMatch(raw.title, SILHOUETTES); if (silhouette) attributes.silhouette = silhouette;
-  const tagText = (raw.tags || []).join(' ') + ' ' + (raw.title || '');
-  const occasion = (() => { for (const [n, o] of OCCASIONS) if (new RegExp(`\\b${n}\\b`, 'i').test(tagText)) return o; return null; })();
-  if (occasion) attributes.occasion = occasion;
+  let occasion = null;
+  if (!isFootwear) {
+    // Length inference from the source title (spec §5.1/§12). If none is found the
+    // title builder fails the product downstream — a length is never omitted.
+    const length = detectLength(raw.title) ||
+      (isDress ? detectLength(`${tagStr} ${raw.productType || raw.product_type || ''}`) : null);
+    if (length) attributes.length = length;
+    const neckline = firstMatch(raw.title, NECKLINES); if (neckline) attributes.neckline = neckline;
+    const sleeve = firstMatch(raw.title, SLEEVES); if (sleeve) attributes.sleeve = sleeve;
+    const silhouette = firstMatch(raw.title, SILHOUETTES); if (silhouette) attributes.silhouette = silhouette;
+    const tagText = (raw.tags || []).join(' ') + ' ' + (raw.title || '');
+    occasion = (() => { for (const [n, o] of OCCASIONS) if (new RegExp(`\\b${n}\\b`, 'i').test(tagText)) return o; return null; })();
+    if (occasion) attributes.occasion = occasion;
+  }
 
   const currency = sourceCurrency || (/^(CAD|USD)$/i.test(raw.currency || '') ? raw.currency.toUpperCase() : 'CAD');
 
@@ -209,6 +241,7 @@ export function mapApifyToInput(raw, opts = {}) {
   };
   if (isSet) input.isSet = true;
   if (isSwim) { input.isSwim = true; input.swimCategoryId = swim.cat; }
+  if (isFootwear) { input.isFootwear = true; input.footwearCategoryId = foot.cat; }
   if (Object.keys(attributes).length) input.attributes = attributes;
   if (variantOverrides.length) input.variantOverrides = variantOverrides;
 

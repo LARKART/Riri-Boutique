@@ -14,6 +14,8 @@ import { shopifyGraphQL } from '../shopify/client.js';
 export const DRESS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-4';
 export const OUTFIT_SETS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-11';
 export const SWIMWEAR_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-20';
+export const SANDALS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-8-6';
+export const SHOES_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-8';
 
 const TAXONOMY_SEARCH = `
   query TaxonomySearch($q: String!) {
@@ -39,6 +41,11 @@ export async function resolveCategory(draft, gql = shopifyGraphQL) {
   // node chosen at ingestion), never Dresses or Outfit Sets.
   if (draft.isSwim) {
     return { id: draft.swimCategoryId || SWIMWEAR_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Swimwear' };
+  }
+  // Footwear: sandals/heels/etc. use the Shoes taxonomy (per-product node), never
+  // any apparel node.
+  if (draft.isFootwear) {
+    return { id: draft.footwearCategoryId || SHOES_CATEGORY_GID, fullName: 'Apparel & Accessories > Shoes' };
   }
   // Two-piece outfits / sets (and rompers grouped with them) use Outfit Sets,
   // never the Dresses category.

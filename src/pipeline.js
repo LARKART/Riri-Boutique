@@ -73,6 +73,8 @@ export async function buildProductDraft(input, deps = {}) {
   // Never ship an empty SEO title — fall back to the keyword-first product title.
   if (!content.seo) content.seo = {};
   if (!String(content.seo.title || '').trim()) content.seo.title = title;
+  // Footwear: SEO title mirrors the product title exactly (per merchandising rule).
+  if (draft.isFootwear) content.seo.title = title;
   const variants = buildVariants(draft, { fx: deps.fx || buildFxFromEnv() });
 
   // Stage 5 — taxonomy + GMC feed fields (pattern + inferred base color for prints).
