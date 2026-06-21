@@ -15,7 +15,7 @@
 'use strict';
 
 import { detectLength } from './lengths.js';
-import { normalizeColorName } from '../normalize/colors.js';
+import { normalizeColorName, stripStockSuffix } from '../normalize/colors.js';
 import { normalizePattern, inferBaseColor } from '../normalize/patterns.js';
 
 const NECKLINES = ['One Shoulder', 'Off Shoulder', 'Off-Shoulder', 'V Neck', 'V-Neck', 'Square Neck',
@@ -49,7 +49,7 @@ function detectSwimType(text) {
 
 /** Title-case a free color label we keep verbatim (unknown-but-real colors). */
 function cleanColorLabel(s) {
-  return String(s).trim().replace(/\s+/g, ' ').split(' ').map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ');
+  return stripStockSuffix(s).replace(/\s+/g, ' ').split(' ').map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ');
 }
 
 function uniq(values) {
@@ -98,7 +98,7 @@ function imagesFromLinkage(linkage) {
   const imgs = (linkage.images || []).slice().sort((a, b) => (a.position ?? 1) - (b.position ?? 1));
   return imgs.map((im, i) => {
     const colorsForImg = new Set((im.variant_ids || []).map((id) => variantColor.get(id)).filter(Boolean));
-    const color = colorsForImg.size === 1 ? [...colorsForImg][0] : null; // one color -> tag it; else gallery
+    const color = colorsForImg.size === 1 ? stripStockSuffix([...colorsForImg][0]) : null; // one color -> tag it; else gallery
     return {
       src: im.src,
       position: im.position ?? i + 1,
@@ -173,7 +173,7 @@ export function mapApifyToInput(raw, opts = {}) {
     const colorSet = new Set(colors.map((c) => c.toLowerCase()));
     const sizeSet = new Set(sizes.map((s) => s.toLowerCase()));
     for (const v of variants) {
-      const c = v[colorKey], s = v[sizeKey], p = priceOf(v);
+      const c = stripStockSuffix(v[colorKey]), s = v[sizeKey], p = priceOf(v);
       if (c && s && Number.isFinite(p) && p > 0 &&
           colorSet.has(String(c).toLowerCase()) && sizeSet.has(String(s).toLowerCase())) {
         variantOverrides.push({ color: String(c).trim(), size: String(s).trim(), sourcePrice: p });
@@ -257,7 +257,7 @@ export function mapApifyToInput(raw, opts = {}) {
     let untagged = 0;
     input.images = input.images.map((im) => {
       if (im.color == null) return im;
-      const canon = colorByLower.get(String(normalizeColorName(im.color) || im.color).toLowerCase());
+      const canon = colorByLower.get(String(normalizeColorName(im.color) || stripStockSuffix(im.color)).toLowerCase());
       if (canon) return { ...im, color: canon };
       const { color, ...rest } = im; // dropped color -> keep as gallery image
       untagged++;

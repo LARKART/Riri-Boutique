@@ -74,6 +74,18 @@ const COLOR_MODIFIERS = new Set([
 // Sentinel option value used when a product genuinely has no color dimension.
 const COLOR_SENTINELS = new Set(['default']);
 
+// Trailing parenthetical stock/marketing phrases scraped into color values
+// ("Black (Almost Sold Out)") — stripped so they never leak into options/SKUs.
+const STOCK_SUFFIX_RE = /\s*\(\s*(?:almost\s+)?(?:sold\s*out|low\s+stock|out\s+of\s+stock|last\s+(?:one|few|\d+)|only\s+\d+\s+left|selling\s+fast|back[\s-]?order(?:ed)?|pre[\s-]?order|restock\w*|limited|final\s+sale|new)\s*\)\s*$/i;
+
+/** Strip trailing stock/marketing parentheticals from a scraped color value. */
+export function stripStockSuffix(value) {
+  let t = String(value ?? '').trim();
+  let prev;
+  do { prev = t; t = t.replace(STOCK_SUFFIX_RE, '').trim(); } while (t !== prev);
+  return t;
+}
+
 /**
  * Normalize a candidate color to a clean Title-Cased display value, or return
  * null if it is not a real color. Casing/whitespace only — words are preserved
@@ -81,7 +93,7 @@ const COLOR_SENTINELS = new Set(['default']);
  * lines up with the source.
  */
 export function normalizeColorName(value) {
-  const raw = String(value ?? '').trim().replace(/\s+/g, ' ');
+  const raw = stripStockSuffix(value).replace(/\s+/g, ' ');
   if (!raw) return null;
   if (COLOR_SENTINELS.has(raw.toLowerCase())) return 'Default';
   const tokens = raw.toLowerCase().split(/[\s/&-]+/).filter(Boolean);

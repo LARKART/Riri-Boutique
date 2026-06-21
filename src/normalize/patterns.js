@@ -12,6 +12,8 @@
 
 'use strict';
 
+import { stripStockSuffix } from './colors.js';
+
 // Pattern phrase -> canonical token, most specific first.
 const PATTERNS = [
   [/\bditsy\s+floral\b/i, 'Ditsy Floral'],
@@ -19,7 +21,7 @@ const PATTERNS = [
   [/\bpolka\s*dots?\b/i, 'Polka Dot'],
   [/\bdots?\b/i, 'Polka Dot'],
   [/\bstrip(?:e|ed|es)\b/i, 'Striped'],
-  [/\b(?:animal\s+print|leopard|cheetah|zebra|snake(?:skin)?(?:\s*print)?|python)\b/i, 'Animal Print'],
+  [/\b(?:animal\s+print|leopard|cheetah|zebra|tiger|snake(?:skin)?(?:\s*print)?|python)\b/i, 'Animal Print'],
   [/\bgingham\b/i, 'Gingham'],
   [/\b(?:plaid|tartan)\b/i, 'Plaid'],
   [/\bcheck(?:ed|s)?\b/i, 'Checked'],
@@ -32,7 +34,7 @@ const PATTERNS = [
   [/\bbotanical\b/i, 'Botanical'],
   [/\bhoundstooth\b/i, 'Houndstooth'],
   [/\bcamo(uflage)?\b/i, 'Camouflage'],
-  [/\bprinted?\b/i, 'Print'],
+  [/\bprint(ed)?\b/i, 'Print'],
 ];
 
 /** Canonical pattern names (allowlist), for reference/QA. */
@@ -40,7 +42,7 @@ export const PATTERN_TOKENS = [...new Set(PATTERNS.map(([, c]) => c))];
 
 /** Return the canonical pattern for a value (e.g. "Floral"), or null if not a pattern. */
 export function normalizePattern(value) {
-  const t = String(value ?? '').trim();
+  const t = stripStockSuffix(value);
   if (!t) return null;
   for (const [re, canon] of PATTERNS) if (re.test(t)) return canon;
   return null;
