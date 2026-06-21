@@ -23,7 +23,7 @@ import { mapApifyToInput } from '../src/transform/apifyToInput.js';
 import { buildProductDraft, finalizeProduct } from '../src/pipeline.js';
 import { makeNameAllocator } from '../src/content/names.js';
 import { runQAGate } from '../src/validate/qaGate.js';
-import { ensureCollection } from '../src/shopify/collections.js';
+import { ensureCollection, addProductsToCollection } from '../src/shopify/collections.js';
 import { executeProductSet } from '../src/shopify/execute.js';
 import { verifyPublished } from '../src/shopify/publish.js';
 import { buildProductSetOperation } from '../src/shopify/payload-builder.js';
@@ -94,16 +94,26 @@ async function fetchExisting(name) {
   return { tokenToTitle, names, collId, collTitle };
 }
 
-/** All product names already used anywhere in the store (avoid store-wide name/SKU collisions). */
-async function fetchAllProductNames() {
-  const q = `query($after:String){ products(first:250, after:$after){ pageInfo{hasNextPage endCursor} nodes{ title } } }`;
-  const names = []; let after = null;
+/**
+ * Store-wide index: every product's names (for unique allocation) and an image
+ * fingerprint -> { id, collections } map (to dedupe across the whole store and
+ * link an already-created product into a new collection instead of duplicating).
+ */
+async function fetchStoreIndex() {
+  const q = `query($after:String){ products(first:100, after:$after){ pageInfo{hasNextPage endCursor}
+    nodes{ id title collections(first:20){ nodes{ title } } media(first:40){ nodes{ ... on MediaImage { image { url } } } } } } }`;
+  const names = []; const tokenMap = new Map();
+  let after = null;
   do {
     const d = await shopifyGraphQL(q, { after });
-    for (const p of d.products.nodes) { const n = nameFromTitle(p.title); if (n) names.push(n); }
+    for (const p of d.products.nodes) {
+      const n = nameFromTitle(p.title); if (n) names.push(n);
+      const colls = new Set(p.collections.nodes.map((c) => c.title));
+      for (const m of p.media.nodes) { const t = imageToken(m.image?.url); if (t && !tokenMap.has(t)) tokenMap.set(t, { id: p.id, title: p.title, colls }); }
+    }
     after = d.products.pageInfo.hasNextPage ? d.products.pageInfo.endCursor : null;
   } while (after);
-  return names;
+  return { names, tokenMap };
 }
 
 console.log(`→ add-from-url-deduped (writes ${execute ? 'ON' : 'OFF'}${publish ? ', PUBLISH/ACTIVE' : ''})`);
@@ -112,15 +122,14 @@ urls.forEach((u, i) => console.log(`  url ${i + 1}      : ${u}`));
 if (occasion) console.log(`  occasion   : titles/SEO will include "${occasion}"`);
 console.log('');
 
-// 1) Fingerprint the existing collection (image identity + names in use).
-const { tokenToTitle, collId, collTitle } = await fetchExisting(collectionName);
-// Seed the allocator from EVERY product name in the store so new products never
-// reuse a name (avoids store-wide naming confusion and SKU collisions).
-const storeNames = await fetchAllProductNames();
+// 1) Index the whole store: names (for unique allocation) + image fingerprints
+// (for store-wide dedup and linking existing products into this collection).
+const { collId, collTitle } = await fetchExisting(collectionName);
+const { names: storeNames, tokenMap } = await fetchStoreIndex();
 console.log(collId
-  ? `Existing collection: ${collTitle} (${collId}); ${tokenToTitle.size} image fingerprints.`
+  ? `Existing collection: ${collTitle} (${collId}).`
   : `Collection "${collectionName}" does not exist yet — it will be created on --execute.`);
-console.log(`Store-wide names reserved: ${new Set(storeNames.map((n) => n.toLowerCase())).size}\n`);
+console.log(`Store index: ${tokenMap.size} image fingerprints, ${new Set(storeNames.map((n) => n.toLowerCase())).size} names reserved.\n`);
 
 // 2) Scrape every URL, tagging each item with its source URL.
 const items = [];
@@ -132,13 +141,14 @@ for (const url of urls) {
 }
 console.log('');
 
-// 3) Classify across the whole batch (existing + cross-URL + within-URL dedup).
+// 3) Classify across the whole batch (store-wide + cross-URL + within-URL dedup).
 const allocator = makeNameAllocator(storeNames); // unique vs every existing product
 const survivors = [];
 const skipped = [];
 const held = [];
+const linked = []; // already exist elsewhere in the store -> link into this collection, don't duplicate
 const seenThisRun = new Map(); // token -> source title (cross+within-URL dedup)
-const perUrl = new Map(urls.map((u) => [u, { scraped: 0, added: 0, skipped: 0, held: 0 }]));
+const perUrl = new Map(urls.map((u) => [u, { scraped: 0, added: 0, linked: 0, skipped: 0, held: 0 }]));
 for (const { raw, url } of items) {
   const stat = perUrl.get(url); stat.scraped++;
   let origin = null; try { origin = new URL(url).origin; } catch { /* */ }
@@ -146,8 +156,12 @@ for (const { raw, url } of items) {
   if (origin && raw.handle) { try { linkage = await fetchShopifyProductJson(origin, raw.handle); } catch { /* */ } }
   const tokens = tokensFrom(linkage?.images || raw.images);
 
-  const existHit = tokens.find((t) => tokenToTitle.has(t));
-  if (existHit) { skipped.push({ raw, url, reason: `already in collection as "${tokenToTitle.get(existHit)}"` }); stat.skipped++; continue; }
+  const existing = tokens.map((t) => tokenMap.get(t)).find(Boolean);
+  if (existing) {
+    if (existing.colls.has(collectionName)) { skipped.push({ raw, url, reason: `already in "${collectionName}" as "${existing.title}"` }); stat.skipped++; }
+    else { linked.push({ raw, url, id: existing.id, title: existing.title, from: [...existing.colls] }); stat.linked++; }
+    continue;
+  }
   const runHit = tokens.find((t) => seenThisRun.has(t));
   if (runHit) { skipped.push({ raw, url, reason: `duplicate of "${seenThisRun.get(runHit)}" earlier in this run` }); stat.skipped++; continue; }
   if (tokens.length === 0) { skipped.push({ raw, url, reason: 'no images to fingerprint (skipped to be safe)' }); stat.skipped++; continue; }
@@ -179,9 +193,10 @@ const qaFailed = gate.some((g) => !g.ok);
 
 // 5) Report.
 console.log('— per URL —');
-for (const [u, s] of perUrl) console.log(`  ${u}\n     scraped ${s.scraped} | added ${s.added} | skipped ${s.skipped} | held ${s.held}`);
-console.log(`\nTOTAL unique NEW: ${survivors.length} | skipped (dupes/unbuildable): ${skipped.length} | held: ${held.length}`);
+for (const [u, s] of perUrl) console.log(`  ${u}\n     scraped ${s.scraped} | added ${s.added} | linked ${s.linked} | skipped ${s.skipped} | held ${s.held}`);
+console.log(`\nTOTAL unique NEW: ${survivors.length} | linked (existing→collection): ${linked.length} | skipped: ${skipped.length} | held: ${held.length}`);
 
+if (linked.length) { console.log('\n— linked (already in store, added to this collection, not duplicated) —'); for (const l of linked) console.log(`  • ${l.title} — exists in [${l.from.join(', ')}]`); }
 if (skipped.length) { console.log('\n— skipped —'); for (const s of skipped) console.log(`  • ${s.raw.title} — ${s.reason}`); }
 if (held.length) { console.log('\n— held for your decision —'); for (const h of held) console.log(`  • ${h.raw.title} — ${h.reason}`); }
 
@@ -217,9 +232,19 @@ if (qaSkipped.length) {
   console.log(`\n⚠️  Skipping ${qaSkipped.length} product(s) that FAILED the QA gate:`);
   for (const s of qaSkipped) console.log(`  • ${s.draft.title} (source: ${s.raw.title}) — ${s.qa.errors.join('; ')}`);
 }
-if (!toCreate.length) { console.log('\nNothing to create. Done.'); process.exit(qaSkipped.length ? 1 : 0); }
+if (!toCreate.length && !linked.length) { console.log('\nNothing to create or link. Done.'); process.exit(qaSkipped.length ? 1 : 0); }
 
 const collection = await ensureCollection(collectionName); // create-or-reuse
+
+// Link products that already exist elsewhere into this collection (no duplicates).
+if (linked.length) {
+  console.log(`\n→ Linking ${linked.length} existing product(s) into "${collection.title}"...`);
+  try {
+    await addProductsToCollection(collection.id, linked.map((l) => l.id), { skipGuard: true });
+    for (const l of linked) console.log(`  🔗 ${l.title}`);
+  } catch (err) { console.log(`  ❌ link failed: ${err.message}`); }
+}
+
 const status = publish ? 'ACTIVE' : 'DRAFT';
 console.log(`\n→ Creating ${toCreate.length} product(s) as ${status} in "${collection.title}"...`);
 const created = [];

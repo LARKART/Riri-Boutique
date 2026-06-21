@@ -122,12 +122,17 @@ export async function processImages(draft, opts = {}) {
     approved[0]?.src ||
     null;
 
-  // Default image per color variant (size does not change the image).
+  // Default image per color variant (size does not change the image). For a
+  // single-color product (incl. the "Default" sentinel) every image belongs to
+  // that one color, so fall back to the main image when none is color-tagged.
+  // Multi-color products do NOT fall back — a missing color image stays null and
+  // is flagged, so genuine per-color mapping gaps (e.g. the Off White bug) surface.
+  const singleColor = (draft.colors || []).length === 1;
   const variantImageByColor = {};
   for (const color of draft.colors || []) {
     const list = imagesByColor[color];
-    variantImageByColor[color] = list?.[0] || null;
-    if (!list || list.length === 0) {
+    variantImageByColor[color] = list?.[0] || (singleColor ? mainSrc : null);
+    if (!variantImageByColor[color]) {
       warnings.push(`Color "${color}" has no approved image (spec 14.2 requires every color variant to have an image).`);
     }
   }
