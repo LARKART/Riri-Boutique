@@ -70,6 +70,9 @@ export async function buildProductDraft(input, deps = {}) {
   // Stage 5/4 — title (deterministic) + variant matrix (price/compareAt/SKU).
   // FX conversion (spec §13) applies when source currency != store currency.
   const title = buildTitle(draft);
+  // Never ship an empty SEO title — fall back to the keyword-first product title.
+  if (!content.seo) content.seo = {};
+  if (!String(content.seo.title || '').trim()) content.seo.title = title;
   const variants = buildVariants(draft, { fx: deps.fx || buildFxFromEnv() });
 
   // Stage 5 — taxonomy + GMC feed fields (pattern + inferred base color for prints).
