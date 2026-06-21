@@ -48,11 +48,11 @@ export async function buildProductDraft(input, deps = {}) {
 
   const draft = { ...input, attributes: input.attributes || {} };
 
-  // Collection occasion keyword (e.g. "Summer Dresses" -> "Summer"): inject into
-  // the title's occasion slot so the title (and SEO) carry the collection term.
-  // Enabled by default; deps.collectionOccasion === false opts a run out, and
-  // deps.occasionOverride forces a specific keyword.
-  if (deps.collectionOccasion !== false && draft.isDress) {
+  // Collection occasion keyword (e.g. "Summer Dresses" -> "Summer", "Summer Sets"
+  // -> "Summer"): inject into the title's occasion slot so the title (and SEO)
+  // carry the collection term — for dresses AND sets. Enabled by default;
+  // deps.collectionOccasion === false opts out, deps.occasionOverride forces one.
+  if (deps.collectionOccasion !== false) {
     const kw = deps.occasionOverride || collectionKeyword(draft.group);
     if (kw) draft.attributes = { ...draft.attributes, occasion: kw };
   }

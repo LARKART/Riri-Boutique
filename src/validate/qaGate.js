@@ -71,9 +71,14 @@ export function checkProductQA(draft, opts = {}) {
     if (intruder) errors.push(`${field} contains another product's name "${intruder}" (carryover).`);
   }
 
-  // 3) Title carries a length token.
-  if (!hasLengthToken(draft.title)) {
+  // 3) Dress titles must carry a length token (Midi/Maxi/…). Sets/other garments
+  // have no dress length — their garment-type noun (e.g. "Pants Set") stands in.
+  if (draft.isDress && !hasLengthToken(draft.title)) {
     errors.push(`Title "${draft.title}" is missing a length token (Midi/Maxi/etc.).`);
+  }
+  // Sets must never be described as a dress.
+  if (draft.isSet && /\bdress(es)?\b/i.test(draft.title)) {
+    errors.push(`Set title "${draft.title}" must not contain the word "Dress".`);
   }
 
   // 3b) Title carries the collection's occasion keyword (e.g. "Summer"), unless

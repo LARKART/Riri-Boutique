@@ -12,6 +12,7 @@
 import { shopifyGraphQL } from '../shopify/client.js';
 
 export const DRESS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-4';
+export const OUTFIT_SETS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-11';
 
 const TAXONOMY_SEARCH = `
   query TaxonomySearch($q: String!) {
@@ -32,6 +33,11 @@ const TAXONOMY_SEARCH = `
 export async function resolveCategory(draft, gql = shopifyGraphQL) {
   if (draft.isDress) {
     return { id: DRESS_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Dresses' };
+  }
+  // Two-piece outfits / sets (and rompers grouped with them) use Outfit Sets,
+  // never the Dresses category.
+  if (draft.isSet) {
+    return { id: OUTFIT_SETS_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Outfit Sets' };
   }
 
   const q = String(draft.productType || '').trim();

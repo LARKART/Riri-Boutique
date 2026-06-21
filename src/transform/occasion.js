@@ -20,7 +20,7 @@ import { LENGTH_TOKENS } from './lengths.js';
 export function collectionKeyword(collectionTitle) {
   let s = String(collectionTitle || '').trim();
   let prev;
-  do { prev = s; s = s.replace(/\s*\b(dresses|dress|collection|edit)\b\s*$/i, '').trim(); } while (s !== prev);
+  do { prev = s; s = s.replace(/\s*\b(dresses|dress|sets|set|collection|edit)\b\s*$/i, '').trim(); } while (s !== prev);
   return s || null;
 }
 
@@ -31,8 +31,11 @@ export function titleHasKeyword(title, keyword) {
   return new RegExp(`\\b${esc}\\b`, 'i').test(String(title || ''));
 }
 
-// Anchor tokens we insert the keyword before: length tokens, then the noun "Dress".
-const ANCHORS = [...LENGTH_TOKENS, 'Dress', 'Dresses'];
+// Anchor tokens we insert the keyword before: length tokens, then the garment
+// noun. Garment-specific nouns come before the generic "Set" so insertion reads
+// naturally ("Long Sleeve Summer Pants Set", not "Pants Summer Set").
+const ANCHORS = [...LENGTH_TOKENS, 'Dress', 'Dresses', 'Pants', 'Trousers', 'Shorts',
+  'Skirt', 'Romper', 'Jumpsuit', 'Top', 'Set', 'Sets'];
 
 /**
  * Insert the keyword before the length token (or "Dress") in a title, keeping the

@@ -27,6 +27,17 @@ const OCCASIONS = [['wedding guest', 'Wedding Guest'], ['bridesmaid', 'Bridesmai
 
 const SIZE_RE = /^(xxs|xs|s|m|l|xl|2xl|3xl|xxl|xxxl|one size|os|\d{1,2}|us\s?\d+|uk\s?\d+|eu\s?\d+)$/i;
 
+/** Garment-type token for a two-piece set / one-piece outfit, from the title. */
+function detectSetType(title) {
+  const t = String(title || '').toLowerCase();
+  if (/\bromper\b/.test(t)) return 'Romper';
+  if (/\bjumpsuit\b/.test(t)) return 'Jumpsuit';
+  if (/\bskirt\b/.test(t)) return 'Skirt Set';
+  if (/\b(shorts?|biker)\b/.test(t)) return 'Short Set';
+  if (/\b(pants?|trousers?|wide[-\s]?leg|leggings?)\b/.test(t)) return 'Pants Set';
+  return 'Two Piece Set';
+}
+
 function uniq(values) {
   const seen = new Set(); const out = [];
   for (const v of values) { const s = String(v).trim(); const k = s.toLowerCase(); if (s && !seen.has(k)) { seen.add(k); out.push(s); } }
@@ -88,11 +99,17 @@ export function mapApifyToInput(raw, opts = {}) {
   const notes = [];
   const variants = Array.isArray(raw.variants) ? raw.variants : [];
 
+  const tagStr = Array.isArray(raw.tags) ? raw.tags.join(' ') : String(raw.tags || '');
   const isDress = /\bdress(es)?\b/i.test(raw.title || '') ||
-    (raw.tags || []).some((t) => /dress/i.test(t)) ||
+    /\bdress(es)?\b/i.test(tagStr) ||
     /dress/i.test(raw.productType || '');
+  // Two-piece outfits / rompers / jumpsuits — classified as sets (never dresses).
+  const isSet = !isDress &&
+    (/\b(sets?|two[-\s]?piece|romper|jumpsuit|co[-\s]?ord)\b/i.test(raw.title || '') ||
+     /\b(sets?|two[-\s]?piece|co[-\s]?ord)\b/i.test(tagStr));
   const productType = isDress ? 'Dress'
-    : (raw.productType || (raw.tags || [])[0] || 'Product');
+    : isSet ? detectSetType(raw.title)
+    : (raw.productType || (Array.isArray(raw.tags) ? raw.tags[0] : undefined) || 'Product');
 
   // Options from variants (this actor has no top-level options array).
   const cls = classifyOptions(variants);
@@ -171,6 +188,7 @@ export function mapApifyToInput(raw, opts = {}) {
     colors,
     sizes,
   };
+  if (isSet) input.isSet = true;
   if (Object.keys(attributes).length) input.attributes = attributes;
   if (variantOverrides.length) input.variantOverrides = variantOverrides;
 
