@@ -70,6 +70,26 @@ function detectFootwear(text) {
   return { noun, cat: `gid://shopify/TaxonomyCategory/${base.cat}` };
 }
 
+// Women's EU -> US/CA shoe-size conversion (the store sells in CAD; US & CA
+// women's sizes are numerically identical, so US/CA numbers are the house system).
+const EU_TO_US_WOMENS = { 34: '4', 35: '5', 36: '5.5', 37: '6.5', 38: '7.5', 39: '8.5', 40: '9', 41: '10', 42: '11', 43: '12', 44: '13', 45: '14' };
+
+/**
+ * Normalize a scraped shoe size to a clean US/CA number: strip country labels
+ * ("6US","6.5 US" -> "6","6.5"), take the lower bound of a range
+ * ("5.5 – 6 US" -> "5.5"), and convert EU numbers (36–46) to US/CA. Non-numeric
+ * (letter) sizes are returned trimmed as-is.
+ */
+function normalizeFootwearSize(v) {
+  const raw = String(v ?? '').trim();
+  const range = raw.match(/(\d{1,2}(?:\.\d)?)\s*[–-]\s*\d{1,2}(?:\.\d)?/);
+  const num = range ? range[1] : (raw.match(/\d{1,2}(?:\.\d)?/) || [])[0];
+  if (num == null) return raw; // letter size etc. — leave it
+  const n = parseFloat(num);
+  if (n >= 33 && n <= 46) return EU_TO_US_WOMENS[Math.round(n)] || String(n);
+  return String(n); // already US/CA; drops trailing ".0" and the country label
+}
+
 /** Title-case a free color label we keep verbatim (unknown-but-real colors). */
 function cleanColorLabel(s) {
   return stripStockSuffix(s).replace(/\s+/g, ' ').split(' ').map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ');
@@ -178,7 +198,9 @@ export function mapApifyToInput(raw, opts = {}) {
   }
   let colors = uniq(keptColors);
   const patterns = uniq(patternsFound);
-  let sizes = cls.sizes;
+  // Footwear: normalize scraped shoe sizes to clean US/CA numbers (strip "US"
+  // labels, lower-bound of ranges, EU->US/CA) for one consistent system.
+  let sizes = isFootwear ? uniq(cls.sizes.map(normalizeFootwearSize)) : cls.sizes;
   if (colors.length === 0) { colors = ['Default']; notes.push('No color option detected; defaulted to "Default".'); }
   if (sizes.length === 0) { sizes = ['One Size']; notes.push('No size option detected; defaulted to "One Size".'); }
 
@@ -201,7 +223,7 @@ export function mapApifyToInput(raw, opts = {}) {
     const colorSet = new Set(colors.map((c) => c.toLowerCase()));
     const sizeSet = new Set(sizes.map((s) => s.toLowerCase()));
     for (const v of variants) {
-      const c = stripStockSuffix(v[colorKey]), s = v[sizeKey], p = priceOf(v);
+      const c = stripStockSuffix(v[colorKey]), s = isFootwear ? normalizeFootwearSize(v[sizeKey]) : v[sizeKey], p = priceOf(v);
       if (c && s && Number.isFinite(p) && p > 0 &&
           colorSet.has(String(c).toLowerCase()) && sizeSet.has(String(s).toLowerCase())) {
         variantOverrides.push({ color: String(c).trim(), size: String(s).trim(), sourcePrice: p });
