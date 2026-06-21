@@ -111,6 +111,14 @@ export function checkProductQA(draft, opts = {}) {
     }
   }
 
+  // 4b) Every variant must resolve to an image (no zero-image / null-variant-image
+  // products going live — e.g. the Off White / mis-detected-size cases).
+  const imageless = variants.filter((v) => !v.image);
+  if (imageless.length) {
+    const ex = imageless[0];
+    errors.push(`${imageless.length}/${variants.length} variant(s) have no image (e.g. ${ex.sku || ex.color}).`);
+  }
+
   // 5) compareAtPrice > price and ends in .00.
   for (const v of variants) {
     const price = Number(v.price);

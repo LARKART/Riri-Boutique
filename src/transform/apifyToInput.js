@@ -25,7 +25,7 @@ const SILHOUETTES = ['A-Line', 'Bodycon', 'Slip', 'Wrap', 'Pleated', 'Draped', '
 const OCCASIONS = [['wedding guest', 'Wedding Guest'], ['bridesmaid', 'Bridesmaid'], ['cocktail', 'Cocktail'],
   ['formal', 'Formal'], ['prom', 'Prom'], ['party', 'Party'], ['vacation', 'Vacation'], ['evening', 'Evening']];
 
-const SIZE_RE = /^(xxs|xs|s|m|l|xl|2xl|3xl|xxl|xxxl|one size|os|\d{1,2}|us\s?\d+|uk\s?\d+|eu\s?\d+)$/i;
+const SIZE_RE = /^(xxs|xs|s|m|l|xl|2xl|3xl|4xl|5xl|xxl|xxxl|one size|os|\d{1,2}|(us|uk|eu|au)\s?\d+|.*\((xxs|xs|s|m|l|xl|2xl|3xl|4xl|5xl|xxl|xxxl)\))$/i;
 
 /** Garment-type token for a two-piece set / one-piece outfit, from the title. */
 function detectSetType(title) {
