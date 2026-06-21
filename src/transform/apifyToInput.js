@@ -38,12 +38,13 @@ function detectSetType(title) {
   return 'Two Piece Set';
 }
 
-// Swimwear garment-type token + matching Shopify taxonomy node.
+// Swimwear garment-type token + matching Shopify taxonomy node. Two-piece styles
+// carry "Set" (a strong search term, e.g. "bikini set"); one-pieces never do.
 function detectSwimType(text) {
   const t = String(text || '').toLowerCase();
   if (/one[-\s]?piece|monokini/.test(t)) return { noun: 'One Piece Swimsuit', cat: 'gid://shopify/TaxonomyCategory/aa-1-20-22' };
-  if (/tankini/.test(t)) return { noun: 'Tankini', cat: 'gid://shopify/TaxonomyCategory/aa-1-20' };
-  if (/bikini/.test(t)) return { noun: 'Bikini', cat: 'gid://shopify/TaxonomyCategory/aa-1-20-6' };
+  if (/tankini/.test(t)) return { noun: 'Tankini Set', cat: 'gid://shopify/TaxonomyCategory/aa-1-20' };
+  if (/bikini/.test(t)) return { noun: 'Bikini Set', cat: 'gid://shopify/TaxonomyCategory/aa-1-20-6' };
   return { noun: 'Swimsuit', cat: 'gid://shopify/TaxonomyCategory/aa-1-20' };
 }
 
@@ -221,6 +222,10 @@ export function mapApifyToInput(raw, opts = {}) {
       const tagStr = Array.isArray(raw.tags) ? raw.tags.join(' ') : String(raw.tags || '');
       input.feedColor = inferBaseColor(`${raw.title || ''} ${tagStr} ${raw.body_html || ''}`);
       notes.push(`Pattern-only color (${input.pattern}); storefront keeps the pattern label, feed color inferred as "${input.feedColor}".`);
+      // Single-print style (every colorway is the same print): put the print in
+      // the title (e.g. "Camouflage Bikini Set"). Never when prints mix with
+      // solids (GMC misrepresentation risk) — that's the hasRealColor branch.
+      if (isSwim && patterns.length === 1) input.productType = `${patterns[0]} ${input.productType}`;
     } else {
       notes.push(`Pattern value(s) ${input.pattern} kept as variant(s) alongside real colors; feed pattern set.`);
     }
