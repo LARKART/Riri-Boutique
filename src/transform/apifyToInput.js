@@ -182,7 +182,8 @@ export function mapApifyToInput(raw, opts = {}) {
     (/\b(sets?|two[-\s]?piece|romper|jumpsuit|co[-\s]?ord)\b/i.test(raw.title || '') ||
      /\b(sets?|two[-\s]?piece|co[-\s]?ord)\b/i.test(tagStr));
   const otherText = `${raw.title || ''} ${typeStr}`;
-  const isShorts = !isDress && !isSwim && !isFootwear && !isSet && /\bshorts?\b/i.test(otherText);
+  // "shorts" (plural garment) only — must NOT match "short sleeve".
+  const isShorts = !isDress && !isSwim && !isFootwear && !isSet && /\bshorts\b/i.test(otherText);
   const isTop = !isDress && !isSwim && !isFootwear && !isSet && !isShorts &&
     /\b(blouse|shirt|tops?|tee|t[-\s]?shirt|tank|cami(?:sole)?|tunic|peplum|bodysuit|crop\s*top)\b/i.test(otherText);
   const swim = isSwim ? detectSwimType(`${raw.title || ''} ${typeStr}`) : null;
