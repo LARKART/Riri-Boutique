@@ -19,9 +19,12 @@ import { titleCore } from '../transform/title.js';
 
 // URL/filename tokens that signal a prohibited image. Heuristic only — a real
 // vision detector should be added via the `detectors` option for production QA.
+// NOTE: do not add bare "off" tokens (e.g. "-off-"/"_off") — they false-match
+// legitimate color/style words like "off-white" and "off-shoulder". Sale images
+// are caught by "sale"/"discount"/"clearance"/"percent-off" instead.
 const REJECT_TOKENS = [
   'watermark', 'wm-', 'sale', 'badge', 'promo', 'discount', 'clearance',
-  'percent-off', '-off-', '_off', 'overlay', 'logo', 'sticker',
+  'percent-off', 'overlay', 'logo', 'sticker',
 ];
 
 // Competitor brand names to reject if they appear in the image URL/filename.
