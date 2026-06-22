@@ -100,6 +100,17 @@ function detectShorts(text) {
   return `${styles.length ? styles.join(' ') + ' ' : ''}Shorts`;
 }
 
+// Honest occasion tags for the custom.occasion metafield (internal filtering).
+// Only genuine source signals — never inferred/bulk-applied (GMC guardrail).
+const OCCASION_TAG_RES = [['wedding guest', /\bwedding\s*guest\b/i], ['wedding', /\bwedding\b/i], ['bridesmaid', /\bbridesmaid\b/i],
+  ['bridal', /\bbridal\b/i], ['cocktail', /\bcocktail\b/i], ['formal', /\bformal\b/i], ['evening', /\bevening\b/i],
+  ['prom', /\bprom\b/i], ['party', /\bparty\b/i], ['homecoming', /\bhomecoming\b/i], ['vacation', /\b(vacation|holiday|resort)\b/i],
+  ['beach', /\bbeach\b/i], ['brunch', /\bbrunch\b/i], ['work', /\b(work|office|business)\b/i], ['casual', /\bcasual\b/i]];
+function detectOccasionTags(text) {
+  const t = String(text || '');
+  return OCCASION_TAG_RES.filter(([, re]) => re.test(t)).map(([c]) => c);
+}
+
 /** Title-case a free color label we keep verbatim (unknown-but-real colors). */
 function cleanColorLabel(s) {
   return stripStockSuffix(s).replace(/\s+/g, ' ').split(' ').map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ');
@@ -162,7 +173,7 @@ function imagesFromLinkage(linkage) {
 }
 
 export function mapApifyToInput(raw, opts = {}) {
-  const { sourceCurrency, group, referenceUrl, trustImages = false } = opts;
+  const { sourceCurrency, group, referenceUrl, trustImages = false, lengthContext, occasionTags } = opts;
   const notes = [];
   const variants = Array.isArray(raw.variants) ? raw.variants : [];
 
@@ -257,7 +268,8 @@ export function mapApifyToInput(raw, opts = {}) {
     // Length inference from the source title (spec §5.1/§12). If none is found the
     // title builder fails the product downstream — a length is never omitted.
     const length = detectLength(raw.title) ||
-      (isDress ? detectLength(`${tagStr} ${raw.productType || raw.product_type || ''}`) : null);
+      (isDress ? detectLength(`${tagStr} ${raw.productType || raw.product_type || ''}`) : null) ||
+      (isDress ? lengthContext : null); // sub-collection length when the source omits it
     if (length) attributes.length = length;
     const neckline = firstMatch(raw.title, NECKLINES); if (neckline) attributes.neckline = neckline;
     const sleeve = firstMatch(raw.title, SLEEVES); if (sleeve) attributes.sleeve = sleeve;
@@ -283,6 +295,9 @@ export function mapApifyToInput(raw, opts = {}) {
   if (isFootwear) { input.isFootwear = true; input.footwearCategoryId = foot.cat; }
   if (isShorts) input.isShorts = true;
   if (isTop) input.isTop = true;
+  // Honest occasion tags (caller context + source title/tags) for custom.occasion.
+  const occTags = uniq([...(occasionTags || []), ...detectOccasionTags(`${raw.title || ''} ${tagStr}`)]);
+  if (occTags.length) input.occasionTags = occTags;
   if (Object.keys(attributes).length) input.attributes = attributes;
   if (variantOverrides.length) input.variantOverrides = variantOverrides;
 

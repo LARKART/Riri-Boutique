@@ -94,14 +94,20 @@ export function buildProductSetInput(draft, opts = {}) {
     input.seo = { title: draft.seo.title, description: draft.seo.description };
   }
   if (files.length) input.files = files;
-  if (draft.feedMetafields?.length) input.metafields = draft.feedMetafields;
+  const metafields = [...(draft.feedMetafields || [])];
+  // Internal custom.occasion (list) — honest occasion tags for filtering/assignment.
+  // NOT a Google field; google_product_category stays the taxonomy category.
+  if (draft.occasionTags?.length) {
+    metafields.push({ namespace: 'custom', key: 'occasion', type: 'list.single_line_text_field', value: JSON.stringify(draft.occasionTags) });
+  }
+  if (metafields.length) input.metafields = metafields;
 
-  // Collection routing (spec 11): tag the product with the collection name for
-  // smart-sorting/filtering, and assign direct membership when the collection
-  // ID is known (created/verified up front by the orchestrator).
-  const collectionTag = draft.collection?.title;
-  if (collectionTag) input.tags = [collectionTag];
-  if (opts.collectionId) input.collections = [opts.collectionId];
+  // Collection routing (spec 11): tag with each collection name for smart-sorting,
+  // and assign direct membership. Supports multi-collection (one product in many).
+  const ids = opts.collectionIds || (opts.collectionId ? [opts.collectionId] : []);
+  const tags = opts.collectionTags || (draft.collection?.title ? [draft.collection.title] : []);
+  if (tags.length) input.tags = tags;
+  if (ids.length) input.collections = ids;
 
   return input;
 }

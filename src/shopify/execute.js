@@ -40,7 +40,7 @@ export async function executeProductSet(draft, opts = {}) {
   // Stage 3 — refuse to write unless we're on the expected store.
   const shop = await assertStoreIdentity();
 
-  const input = buildProductSetInput(draft, { status: opts.status || 'DRAFT', collectionId: opts.collectionId });
+  const input = buildProductSetInput(draft, { status: opts.status || 'DRAFT', collectionId: opts.collectionId, collectionIds: opts.collectionIds, collectionTags: opts.collectionTags });
   const variables = { input, synchronous: opts.synchronous ?? true };
 
   const data = await shopifyGraphQL(PRODUCT_SET_EXECUTE_MUTATION, variables);

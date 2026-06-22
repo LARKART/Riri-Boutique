@@ -19,7 +19,7 @@ const KNOWN_KEYS = new Set([
   'sourceCurrency', 'sourcePrice', 'productType', 'isDress', 'isSet', 'isSwim',
   'swimCategoryId', 'isFootwear', 'footwearCategoryId', 'isShorts', 'isTop', 'name', 'productCode', 'group',
   'attributes', 'colors', 'sizes', 'variantOverrides', 'images', 'referenceUrl',
-  'descriptionInput', 'pattern', 'feedColor',
+  'descriptionInput', 'pattern', 'feedColor', 'occasionTags',
 ]);
 const KNOWN_ATTR_KEYS = new Set(['neckline', 'silhouette', 'occasion', 'length', 'sleeve', 'material']);
 
