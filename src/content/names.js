@@ -12,8 +12,10 @@
 
 'use strict';
 
+import { EXTRA_NAMES } from './name-pool-extended.js';
+
 /** Curated brand-style pool. Extend freely; the synthesizer covers overflow. */
-export const NAME_POOL = [
+const BASE_POOL = [
   // Original set.
   'Serane', 'Elowen', 'Marielle', 'Avora', 'Celina', 'Evadra', 'Lirelle', 'Noemi',
   'Calla', 'Vesper', 'Ondine', 'Amaris', 'Sorrel', 'Thalia', 'Maren', 'Linnea',
@@ -45,6 +47,16 @@ export const NAME_POOL = [
   'Hyacinth', 'Isaline', 'Jessamine', 'Leontine', 'Magdalene', 'Noeline', 'Oceania',
   'Pomeline', 'Rosanna', 'Severine', 'Apollina', 'Vianne', 'Albertine', 'Cunera',
 ];
+
+/** Full real-name pool: curated base + extended set, deduplicated (case-insensitive). */
+export const NAME_POOL = (() => {
+  const seen = new Set(); const out = [];
+  for (const n of [...BASE_POOL, ...EXTRA_NAMES]) {
+    const k = String(n).trim().toLowerCase();
+    if (k && !seen.has(k)) { seen.add(k); out.push(String(n).trim()); }
+  }
+  return out;
+})();
 
 const SYNTH_PREFIXES = ['Av', 'Ser', 'Mar', 'Cel', 'Ev', 'Lir', 'No', 'Cal', 'Ves', 'Ond',
   'Am', 'Sor', 'Tha', 'Lin', 'Cos', 'Del', 'Iso', 'Rhe', 'Mir', 'Sol',
