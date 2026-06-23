@@ -34,6 +34,9 @@ const PATTERNS = [
   [/\bbotanical\b/i, 'Botanical'],
   [/\bhoundstooth\b/i, 'Houndstooth'],
   [/\bcamo(uflage)?\b/i, 'Camouflage'],
+  [/\bcolou?r[-\s]?block\b/i, 'Colorblock'],
+  [/\bpatchwork\b/i, 'Patchwork'],
+  [/\bchevron\b/i, 'Chevron'],
   [/\bprint(ed)?\b/i, 'Print'],
 ];
 
