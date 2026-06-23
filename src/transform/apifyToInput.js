@@ -54,20 +54,34 @@ function detectSwimType(text) {
 function detectFootwear(text) {
   const t = String(text || '');
   const base = /sandals?/i.test(t) ? { n: 'Sandals', cat: 'aa-8-6' }
-    : /(sneakers?|trainers?)/i.test(t) ? { n: 'Sneakers', cat: 'aa-8-1' }
+    : /\b(slides?|sliders?)\b/i.test(t) ? { n: 'Slides', cat: 'aa-8-6' } // slide sandals
+    : /(sneakers?|trainers?)/i.test(t) ? { n: 'Sneakers', cat: 'aa-8-8' }
+    : /\bmary\s*jane/i.test(t) ? { n: 'Mary Janes', cat: /\b(heel|heeled|stiletto|block)\b/i.test(t) ? 'aa-8-10' : 'aa-8-9' }
+    : /\b(ballet|flats?)\b/i.test(t) ? { n: 'Flats', cat: 'aa-8-9' }
     : /boots?/i.test(t) ? { n: 'Boots', cat: 'aa-8' }
     : /espadrilles?/i.test(t) ? { n: 'Espadrilles', cat: 'aa-8' }
     : /loafers?/i.test(t) ? { n: 'Loafers', cat: 'aa-8' }
-    : /(heels?|pumps?)/i.test(t) ? { n: 'Heels', cat: 'aa-8' }
+    : /\bmules?\b/i.test(t) ? { n: 'Mules', cat: 'aa-8' }
+    : /\bclogs?\b/i.test(t) ? { n: 'Clogs', cat: 'aa-8' }
+    : /(heels?|pumps?)/i.test(t) ? { n: 'Heels', cat: 'aa-8-10' }
     : { n: 'Shoes', cat: 'aa-8' };
-  const STYLE_RES = [['Platform', /\bplatform\b/i], ['Wedge', /\bwedges?\b/i], ['Heeled', /\bheel(ed)?\b/i],
-    ['Espadrille', /\bespadrilles?\b/i], ['Slingback', /\bslingback\b/i], ['Gladiator', /\bgladiator\b/i],
-    ['Strappy', /\bstrappy\b/i], ['Ankle Strap', /\bankle[-\s]?strap\b/i], ['T-Strap', /\bt[-\s]?strap\b/i],
-    ['Slide', /\bslides?\b/i], ['Mule', /\bmules?\b/i], ['Thong', /\bthong\b/i], ['Flat', /\bflats?\b/i], ['Buckle', /\bbuckle\b/i]];
+  const STYLE_RES = [['Platform', /\bplatform\b/i], ['Wedge', /\bwedges?\b/i], ['Block Heel', /\bblock\s*heel\b/i],
+    ['Stiletto', /\bstiletto\b/i], ['Kitten Heel', /\bkitten\b/i], ['Pointed Toe', /\bpointed(\s*toe)?\b/i],
+    ['Almond Toe', /\balmond\s*toe\b/i], ['Round Toe', /\bround\s*toe\b/i], ['Open Toe', /\bopen\s*toe\b/i],
+    ['Cap Toe', /\bcap\s*toe\b/i], ['Slingback', /\bslingback\b/i], ['Ankle Strap', /\bankle[-\s]?strap\b/i],
+    ['T-Strap', /\bt[-\s]?strap\b/i], ['Strappy', /\bstrappy\b/i], ['Lace Up', /\blace[-\s]?up\b/i],
+    ['Slip On', /\bslip[-\s]?on\b/i], ['Buckle', /\bbuckle\b/i], ['Bow', /\bbow\b/i], ['Chunky', /\bchunky\b/i],
+    ['Knit', /\bknit\b/i], ['Ballet', /\bballet\b/i], ['Espadrille', /\bespadrilles?\b/i],
+    ['Gladiator', /\bgladiator\b/i], ['Thong', /\bthong\b/i], ['Mule', /\bmules?\b/i], ['Slide', /\bslides?\b/i]];
   let styles = STYLE_RES.filter(([, re]) => re.test(t)).map(([c]) => c);
-  styles = styles.filter((s) => s.toLowerCase() !== base.n.toLowerCase().replace(/s$/, '')).slice(0, 2);
+  // Drop a style word that already IS the garment noun (e.g. "Slide" for Slides,
+  // "Mule" for Mules) so we don't get "Slide Slides".
+  const baseSingular = base.n.toLowerCase().replace(/s$/, '');
+  styles = styles.filter((s) => s.toLowerCase() !== baseSingular
+    && !(base.n === 'Slides' && s === 'Slide') && !(base.n === 'Mules' && s === 'Mule')).slice(0, 2);
   const orth = /orthop(a)?edic/i.test(t);
-  const noun = `${orth ? 'Orthopedic ' : ''}${styles.length ? styles.join(' ') + ' ' : ''}${base.n}`;
+  let noun = `${orth ? 'Orthopedic ' : ''}${styles.length ? styles.join(' ') + ' ' : ''}${base.n}`;
+  noun = noun.replace(/Heel\s+Heels/i, 'Heels'); // "Block Heel Heels" -> "Block Heels"
   return { noun, cat: `gid://shopify/TaxonomyCategory/${base.cat}` };
 }
 
@@ -254,7 +268,7 @@ export function mapApifyToInput(raw, opts = {}) {
   const isSwim = !isDress && /\b(bikini|tankini|one[-\s]?piece|swimsuit|swimwear|bathing\s*suit|monokini)\b/i.test(swimText);
   // Footwear (sandals/heels/sneakers/…) — its own category + title rules.
   const isFootwear = !isDress && !isSwim &&
-    /\b(sandals?|shoes?|sneakers?|trainers?|boots?|heels?|wedges?|espadrilles?|mules?|loafers?|flip[-\s]?flops?|slides?|pumps?|clogs?)\b/i.test(`${raw.title || ''} ${typeStr}`);
+    /\b(sandals?|shoes?|sneakers?|trainers?|boots?|heels?|pumps?|wedges?|espadrilles?|mules?|loafers?|flip[-\s]?flops?|slides?|sliders?|clogs?|flats|ballet|mary\s*jane|slingbacks?)\b/i.test(`${raw.title || ''} ${typeStr}`);
   // Two-piece outfits / rompers / jumpsuits — classified as sets (never dresses/swim/footwear).
   const isSet = !isDress && !isSwim && !isFootwear &&
     (/\b(sets?|two[-\s]?piece|romper|jumpsuit|co[-\s]?ord)\b/i.test(raw.title || '') ||
