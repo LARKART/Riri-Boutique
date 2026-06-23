@@ -11,13 +11,15 @@
 
 'use strict';
 
-const LENGTHS = new Set(['Maxi', 'Midi', 'Mini']);
+import { LENGTH_TOKENS, isLengthToken } from '../transform/lengths.js';
+
 const CURRENCIES = new Set(['CAD', 'USD']);
 const STORE_CURRENCY = 'CAD'; // confirmed via get-shop-info
 const KNOWN_KEYS = new Set([
-  'sourceCurrency', 'sourcePrice', 'productType', 'isDress', 'name', 'productCode',
-  'group', 'attributes', 'colors', 'sizes', 'variantOverrides', 'images',
-  'referenceUrl', 'descriptionInput',
+  'sourceCurrency', 'sourcePrice', 'productType', 'isDress', 'isSet', 'isSwim',
+  'swimCategoryId', 'isFootwear', 'footwearCategoryId', 'isShorts', 'isPants', 'pantsCategoryId', 'isSkirt', 'isTop', 'topCategoryId', 'name', 'productCode', 'group',
+  'attributes', 'colors', 'sizes', 'variantOverrides', 'images', 'referenceUrl',
+  'descriptionInput', 'pattern', 'feedColor', 'occasionTags',
 ]);
 const KNOWN_ATTR_KEYS = new Set(['neckline', 'silhouette', 'occasion', 'length', 'sleeve', 'material']);
 
@@ -106,14 +108,17 @@ export function validateProductInput(input) {
       for (const key of Object.keys(a)) {
         if (!KNOWN_ATTR_KEYS.has(key)) W(`Unknown attribute "${key}" will be ignored.`);
       }
-      if (a.length != null && !LENGTHS.has(a.length)) {
-        E(`attributes.length must be Maxi, Midi, or Mini; got "${a.length}".`);
+      if (a.length != null && !isLengthToken(a.length)) {
+        E(`attributes.length must be one of ${LENGTH_TOKENS.join(', ')}; got "${a.length}".`);
       }
       if (isNonEmptyString(a.occasion) && /,|&|\band\b|\//i.test(a.occasion)) {
         W(`attributes.occasion "${a.occasion}" looks like multiple occasions; spec 5.1 requires exactly one.`);
       }
       if (input.isDress === true && !isNonEmptyString(a.occasion)) {
         W('Dress has no occasion attribute; the title will omit the occasion keyword.');
+      }
+      if (input.isDress === true && a.length == null) {
+        W('Dress has no length attribute; a length must be inferred or the product will fail title building (spec §5.1/§12).');
       }
     }
   } else if (input.isDress === true) {

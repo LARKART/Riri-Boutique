@@ -12,6 +12,14 @@
 import { shopifyGraphQL } from '../shopify/client.js';
 
 export const DRESS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-4';
+export const OUTFIT_SETS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-11';
+export const SWIMWEAR_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-20';
+export const SANDALS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-8-6';
+export const SHOES_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-8';
+export const SHORTS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-14';
+export const PANTS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-12';
+export const SKIRT_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-15';
+export const BLOUSE_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-13-1';
 
 const TAXONOMY_SEARCH = `
   query TaxonomySearch($q: String!) {
@@ -32,6 +40,29 @@ const TAXONOMY_SEARCH = `
 export async function resolveCategory(draft, gql = shopifyGraphQL) {
   if (draft.isDress) {
     return { id: DRESS_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Dresses' };
+  }
+  // Swimwear: bikini / tankini / one-piece use the Swimwear taxonomy (per-product
+  // node chosen at ingestion), never Dresses or Outfit Sets.
+  if (draft.isSwim) {
+    return { id: draft.swimCategoryId || SWIMWEAR_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Swimwear' };
+  }
+  // Footwear: sandals/heels/etc. use the Shoes taxonomy (per-product node), never
+  // any apparel node.
+  if (draft.isFootwear) {
+    return { id: draft.footwearCategoryId || SHOES_CATEGORY_GID, fullName: 'Apparel & Accessories > Shoes' };
+  }
+  if (draft.isShorts) return { id: SHORTS_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Shorts' };
+  // Bottoms: Pants/Skirts use their fixed apparel nodes (the dynamic lookup would
+  // mis-pick "Chef Pants" etc.), never the Dresses category.
+  if (draft.isPants) return { id: draft.pantsCategoryId || PANTS_CATEGORY_GID, fullName: draft.pantsCategoryId ? 'Apparel & Accessories > Clothing > Pants > Jeans' : 'Apparel & Accessories > Clothing > Pants' };
+  if (draft.isSkirt) return { id: SKIRT_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Skirts' };
+  // Tops: knitwear (sweaters/cardigans/hoodies/sweatshirts) carry a precise node
+  // via draft.topCategoryId; generic tops/blouses use the Blouses node.
+  if (draft.isTop) return { id: draft.topCategoryId || BLOUSE_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Clothing Tops' };
+  // Two-piece outfits / sets (and rompers grouped with them) use Outfit Sets,
+  // never the Dresses category.
+  if (draft.isSet) {
+    return { id: OUTFIT_SETS_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Outfit Sets' };
   }
 
   const q = String(draft.productType || '').trim();

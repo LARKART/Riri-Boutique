@@ -37,7 +37,8 @@ const OUTPUT_SCHEMA = {
 
 const SYSTEM = `You write original e-commerce copy for a premium women's fashion boutique (Riri Boutique).
 Rules you must follow exactly:
-- Invent a short, clean, brand-style product NAME (e.g. Serane, Elowen, Marielle, Avora, Celina). It must be unique and must NOT copy any competitor product name, brand, or SKU code.
+- The product's NAME is provided to you as "productName". Use that EXACT name wherever you refer to the product by name in the description, seoTitle, and seoDescription. Never substitute, invent, abbreviate, or use any other name. Only if productName is null may you invent a short, clean, brand-style name (e.g. Serane, Elowen) that copies no competitor name, brand, or SKU code.
+- Write copy for THIS product only, using only the data in this message. Do not reference any other product.
 - Write an ORIGINAL description. Never copy competitor or supplier wording verbatim.
 - Description sections, in order: a short benefit/style opening paragraph; a "Why you'll love it" list; fit / silhouette notes; occasion & styling suggestions; material/feel only if provided. Care/sizing notes only if known.
 - Tone: clean, premium, conversion-focused, not exaggerated. No medical/body-shaping claims, no fake material claims, no keyword stuffing.
@@ -51,15 +52,22 @@ Rules you must follow exactly:
  */
 export async function generateContent(draft, client = new Anthropic()) {
   const core = titleCore(draft); // colorless keyword title core, for SEO grounding
+  const productName = draft.name || null; // authoritative name decided up front
 
+  // Each call is a fresh, stateless request scoped to a single product — no
+  // history is carried between products in a batch (prevents name carryover).
   const userPayload = {
+    productName,
     keywordTitleCore: core,
     productType: draft.productType,
     isDress: draft.isDress,
     attributes: draft.attributes || {},
     factualHints: draft.descriptionInput || {},
-    avoidName: draft.name || null, // if author already chose a name, the model can keep/refine it
   };
+
+  const nameDirective = productName
+    ? `This product's name is exactly "${productName}". Use this exact name (and no other) wherever the product is named in descriptionHtml, seoTitle, and seoDescription.\n\n`
+    : 'Invent a unique brand-style name and use it consistently across all fields.\n\n';
 
   let response;
   try {
@@ -76,6 +84,7 @@ export async function generateContent(draft, client = new Anthropic()) {
         {
           role: 'user',
           content:
+            nameDirective +
             'Generate the name, descriptionHtml, seoTitle, and seoDescription for this product. ' +
             'Base the copy only on the data provided; do not invent unverifiable claims.\n\n' +
             JSON.stringify(userPayload, null, 2),
@@ -109,8 +118,9 @@ export async function generateContent(draft, client = new Anthropic()) {
     throw new Error(`Claude returned non-JSON content: ${textBlock.text.slice(0, 300)}`);
   }
 
+  // The decided name always wins; the model only fills it in when none was given.
   return {
-    name: parsed.name,
+    name: productName || parsed.name,
     descriptionHtml: parsed.descriptionHtml,
     seo: { title: parsed.seoTitle, description: parsed.seoDescription },
   };

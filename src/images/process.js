@@ -19,9 +19,12 @@ import { titleCore } from '../transform/title.js';
 
 // URL/filename tokens that signal a prohibited image. Heuristic only — a real
 // vision detector should be added via the `detectors` option for production QA.
+// NOTE: do not add bare "off" tokens (e.g. "-off-"/"_off") — they false-match
+// legitimate color/style words like "off-white" and "off-shoulder". Sale images
+// are caught by "sale"/"discount"/"clearance"/"percent-off" instead.
 const REJECT_TOKENS = [
   'watermark', 'wm-', 'sale', 'badge', 'promo', 'discount', 'clearance',
-  'percent-off', '-off-', '_off', 'overlay', 'logo', 'sticker',
+  'percent-off', 'overlay', 'logo', 'sticker',
 ];
 
 // Competitor brand names to reject if they appear in the image URL/filename.
@@ -119,12 +122,17 @@ export async function processImages(draft, opts = {}) {
     approved[0]?.src ||
     null;
 
-  // Default image per color variant (size does not change the image).
+  // Default image per color variant (size does not change the image). For a
+  // single-color product (incl. the "Default" sentinel) every image belongs to
+  // that one color, so fall back to the main image when none is color-tagged.
+  // Multi-color products do NOT fall back — a missing color image stays null and
+  // is flagged, so genuine per-color mapping gaps (e.g. the Off White bug) surface.
+  const singleColor = (draft.colors || []).length === 1;
   const variantImageByColor = {};
   for (const color of draft.colors || []) {
     const list = imagesByColor[color];
-    variantImageByColor[color] = list?.[0] || null;
-    if (!list || list.length === 0) {
+    variantImageByColor[color] = list?.[0] || (singleColor ? mainSrc : null);
+    if (!variantImageByColor[color]) {
       warnings.push(`Color "${color}" has no approved image (spec 14.2 requires every color variant to have an image).`);
     }
   }
@@ -136,10 +144,13 @@ export async function processImages(draft, opts = {}) {
     warnings.push('No images provided; variant image mapping is empty.');
   }
 
-  // Ordered media list with alt text + main flag.
+  // Ordered media list with per-image alt text + main flag. Alt is templated
+  // per product/variant: "<product title core> – <color>" when the image is
+  // tagged to a color, else the colorless core (spec 9.2).
+  const altFor = (color) => (color ? `${altText} – ${color}` : altText);
   const media = approved.map((img) => ({
     src: img.src,
-    altText,
+    altText: altFor(img.color ?? null),
     color: img.color ?? null,
     position: img.position ?? null,
     main: img.src === mainSrc,
