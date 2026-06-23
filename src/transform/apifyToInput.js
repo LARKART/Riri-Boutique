@@ -19,7 +19,8 @@ import { normalizeColorName, stripStockSuffix } from '../normalize/colors.js';
 import { normalizePattern, inferBaseColor } from '../normalize/patterns.js';
 
 const NECKLINES = ['One Shoulder', 'Off Shoulder', 'Off-Shoulder', 'V Neck', 'V-Neck', 'Square Neck',
-  'Halter', 'Sweetheart', 'Cowl Neck', 'Cowl', 'Strapless', 'Scoop Neck', 'Boat Neck', 'High Neck'];
+  'Halter', 'Sweetheart', 'Cowl Neck', 'Cowl', 'Strapless', 'Scoop Neck', 'Boat Neck', 'High Neck',
+  'Mock Neck', 'Turtleneck', 'Crew Neck', 'Round Neck'];
 const SLEEVES = ['Long Sleeve', 'Short Sleeve', 'Cap Sleeve', 'Puff Sleeve', 'Sleeveless'];
 const SILHOUETTES = ['A-Line', 'Bodycon', 'Slip', 'Wrap', 'Pleated', 'Draped', 'Mermaid', 'Fit and Flare', 'Tiered'];
 const OCCASIONS = [['wedding guest', 'Wedding Guest'], ['bridesmaid', 'Bridesmaid'], ['cocktail', 'Cocktail'],
@@ -129,6 +130,29 @@ function detectPants(text) {
   return `${styles.length ? styles.join(' ') + ' ' : ''}${noun}`;
 }
 
+/** Top garment-type noun from the source (honest; sleeve/neckline live in
+ * attributes, so they're not baked here). Defaults to the generic "Top". */
+function detectTop(text) {
+  const t = String(text || '');
+  // Knitwear first (so "sweatshirt" isn't read as "shirt", etc.).
+  if (/\bsweat\s?shirt\b/i.test(t)) return 'Sweatshirt';
+  if (/\bhoodie\b/i.test(t)) return 'Hoodie';
+  if (/\bcardigan\b/i.test(t)) return 'Cardigan';
+  if (/\bpullover\b/i.test(t)) return 'Pullover';
+  if (/\b(sweater|jumper)\b/i.test(t)) return 'Sweater';
+  if (/\bknit\b/i.test(t)) return 'Knit Top';
+  if (/\bbody[-\s]?suit\b/i.test(t)) return 'Bodysuit';
+  if (/\bcami(?:sole)?\b/i.test(t)) return 'Camisole';
+  if (/\btank\b/i.test(t)) return 'Tank Top';
+  if (/\btunic\b/i.test(t)) return 'Tunic';
+  if (/\bpeplum\b/i.test(t)) return 'Peplum Top';
+  if (/\bcrop\s*top\b/i.test(t)) return 'Crop Top';
+  if (/\b(t[-\s]?shirt|tee)\b/i.test(t)) return 'T-Shirt';
+  if (/\bblouse\b/i.test(t)) return 'Blouse';
+  if (/\bshirt\b/i.test(t)) return 'Shirt';
+  return 'Top';
+}
+
 /** Skirt garment-type noun with style baked in (style only when source says so).
  * Maxi/Midi/Mini here are skirt STYLES baked into the noun, not a dress length. */
 function detectSkirt(text) {
@@ -215,7 +239,7 @@ function imagesFromLinkage(linkage) {
 }
 
 export function mapApifyToInput(raw, opts = {}) {
-  const { sourceCurrency, group, referenceUrl, trustImages = false, lengthContext, occasionTags } = opts;
+  const { sourceCurrency, group, referenceUrl, trustImages = false, lengthContext, sleeveContext, occasionTags } = opts;
   const notes = [];
   const variants = Array.isArray(raw.variants) ? raw.variants : [];
 
@@ -245,7 +269,7 @@ export function mapApifyToInput(raw, opts = {}) {
   const isSkirt = !isDress && !isSwim && !isFootwear && !isSet && !isShorts && !isPants &&
     /\bskirts?\b/i.test(otherText);
   const isTop = !isDress && !isSwim && !isFootwear && !isSet && !isShorts && !isPants && !isSkirt &&
-    /\b(blouse|shirt|tops?|tee|t[-\s]?shirt|tank|cami(?:sole)?|tunic|peplum|bodysuit|crop\s*top)\b/i.test(otherText);
+    /\b(blouse|shirt|sweat\s?shirt|sweater|pullover|jumper|cardigan|hoodie|knit|tops?|tee|t[-\s]?shirt|tank|cami(?:sole)?|tunic|peplum|bodysuit|crop\s*top)\b/i.test(otherText);
   const swim = isSwim ? detectSwimType(`${raw.title || ''} ${typeStr}`) : null;
   const foot = isFootwear ? detectFootwear(`${raw.title || ''} ${typeStr} ${tagStr}`) : null;
   const productType = isDress ? 'Dress'
@@ -255,7 +279,7 @@ export function mapApifyToInput(raw, opts = {}) {
     : isShorts ? detectShorts(otherText)
     : isPants ? detectPants(otherText)
     : isSkirt ? detectSkirt(otherText)
-    : isTop ? 'Blouse'
+    : isTop ? detectTop(otherText)
     : (raw.productType || (Array.isArray(raw.tags) ? raw.tags[0] : undefined) || 'Product');
 
   // Options from variants (this actor has no top-level options array).
@@ -321,9 +345,12 @@ export function mapApifyToInput(raw, opts = {}) {
     const length = detectLength(raw.title) ||
       (isDress ? detectLength(`${tagStr} ${raw.productType || raw.product_type || ''}`) : null) ||
       (isDress ? lengthContext : null); // sub-collection length when the source omits it
-    if (length) attributes.length = length;
+    if (length && !isTop) attributes.length = length; // tops never carry a dress length
     const neckline = firstMatch(raw.title, NECKLINES); if (neckline) attributes.neckline = neckline;
-    const sleeve = firstMatch(raw.title, SLEEVES); if (sleeve) attributes.sleeve = sleeve;
+    // Sleeve from the title; for tops, fall back to the sub-collection's sleeve
+    // (e.g. the "Long Sleeve Tops" source) when the title doesn't state one.
+    const sleeve = firstMatch(raw.title, SLEEVES) || (isTop ? sleeveContext : null);
+    if (sleeve) attributes.sleeve = sleeve;
     const silhouette = firstMatch(raw.title, SILHOUETTES); if (silhouette) attributes.silhouette = silhouette;
     const tagText = (raw.tags || []).join(' ') + ' ' + (raw.title || '');
     occasion = (() => { for (const [n, o] of OCCASIONS) if (new RegExp(`\\b${n}\\b`, 'i').test(tagText)) return o; return null; })();
@@ -347,7 +374,16 @@ export function mapApifyToInput(raw, opts = {}) {
   if (isShorts) input.isShorts = true;
   if (isPants) { input.isPants = true; if (/\bjeans?\b/i.test(otherText)) input.pantsCategoryId = 'gid://shopify/TaxonomyCategory/aa-1-12-4'; }
   if (isSkirt) input.isSkirt = true;
-  if (isTop) input.isTop = true;
+  if (isTop) {
+    input.isTop = true;
+    // Route knitwear to its precise GMC node; generic tops use the Blouses node.
+    const tc = /sweater|pullover|jumper/i.test(productType) ? 'aa-1-13-12'
+      : /cardigan/i.test(productType) ? 'aa-1-13-3'
+      : /hoodie/i.test(productType) ? 'aa-1-13-13'
+      : /sweatshirt/i.test(productType) ? 'aa-1-13-14'
+      : null;
+    if (tc) input.topCategoryId = `gid://shopify/TaxonomyCategory/${tc}`;
+  }
   // Honest occasion tags (caller context + source title/tags) for custom.occasion.
   const occTags = uniq([...(occasionTags || []), ...detectOccasionTags(`${raw.title || ''} ${tagStr}`)]);
   if (occTags.length) input.occasionTags = occTags;

@@ -56,7 +56,9 @@ export async function resolveCategory(draft, gql = shopifyGraphQL) {
   // mis-pick "Chef Pants" etc.), never the Dresses category.
   if (draft.isPants) return { id: draft.pantsCategoryId || PANTS_CATEGORY_GID, fullName: draft.pantsCategoryId ? 'Apparel & Accessories > Clothing > Pants > Jeans' : 'Apparel & Accessories > Clothing > Pants' };
   if (draft.isSkirt) return { id: SKIRT_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Skirts' };
-  if (draft.isTop) return { id: BLOUSE_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Clothing Tops > Blouses' };
+  // Tops: knitwear (sweaters/cardigans/hoodies/sweatshirts) carry a precise node
+  // via draft.topCategoryId; generic tops/blouses use the Blouses node.
+  if (draft.isTop) return { id: draft.topCategoryId || BLOUSE_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Clothing Tops' };
   // Two-piece outfits / sets (and rompers grouped with them) use Outfit Sets,
   // never the Dresses category.
   if (draft.isSet) {
