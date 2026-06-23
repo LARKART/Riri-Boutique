@@ -23,6 +23,7 @@ const LENGTH_PATTERNS = [
   [/\bknee[-\s]?length\b/i, 'Knee Length'],
   [/\bankle[-\s]?length\b/i, 'Ankle Length'],
   [/\bmaxi\b/i, 'Maxi'],
+  [/\b(?:ball\s*)?gown\b/i, 'Maxi'],
   [/\bmidi\b/i, 'Midi'],
   [/\bmini\b/i, 'Mini'],
 ];

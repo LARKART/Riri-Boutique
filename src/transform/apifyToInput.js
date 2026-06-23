@@ -181,7 +181,8 @@ export function mapApifyToInput(raw, opts = {}) {
   const typeStr = raw.product_type || raw.productType || '';
   const isDress = /\bdress(es)?\b/i.test(raw.title || '') ||
     /\bdress(es)?\b/i.test(tagStr) ||
-    /dress/i.test(typeStr);
+    /dress/i.test(typeStr) ||
+    /\bgowns?\b/i.test(`${raw.title || ''} ${tagStr} ${typeStr}`); // a gown is a dress
   // Swimwear takes precedence over sets (a bikini is a "set" but is swimwear).
   const swimText = `${raw.title || ''} ${tagStr} ${typeStr}`;
   const isSwim = !isDress && /\b(bikini|tankini|one[-\s]?piece|swimsuit|swimwear|bathing\s*suit|monokini)\b/i.test(swimText);
