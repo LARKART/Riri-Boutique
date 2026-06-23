@@ -4,8 +4,9 @@
  * Written as metafields in the `mm-google-shopping` namespace, the convention
  * the Google & YouTube sales channel reads. NOTE: `color` is intentionally NOT
  * a metafield here — the spec requires color to come from the variant option
- * (spec 6.3), and the Google channel derives the feed color from the "Color"
- * product option automatically. So: ensure the option is literally named "Color".
+ * (spec 6.3), and the feed app derives the Google `color` attribute from the
+ * colour product option automatically (verified: option named "Colour" still
+ * maps to Google "color"). The option carries Canadian spelling "Colour".
  *
  * identifier_exists=no is represented as custom_product=true (the namespace's
  * way of saying "this product has no GTIN/barcode").
@@ -21,7 +22,7 @@ const NS = 'mm-google-shopping';
  *   pattern — when the product's color option is a print (e.g. "Floral"), the
  *     pattern is sent in the GMC `pattern` attribute.
  *   color — the dress's base color for the GMC `color` attribute. Normally color
- *     is derived from the "Color" product option; for pattern products that
+ *     is derived from the "Colour" product option; for pattern products that
  *     option is the print, so we override the feed color with the base color.
  * @returns {Array<{namespace,key,type,value}>} metafield inputs for productSet
  */

@@ -64,7 +64,7 @@ export function buildProductSetInput(draft, opts = {}) {
   const variants = (draft.variants || []).map((v) => {
     const variant = {
       optionValues: [
-        { optionName: 'Color', name: v.color },
+        { optionName: 'Colour', name: v.color },
         { optionName: 'Size', name: v.size },
       ],
       price: money(v.price),

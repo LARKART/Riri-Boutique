@@ -107,7 +107,7 @@ export async function buildProductDraft(input, deps = {}) {
     seo: content.seo,
     category,
     options: [
-      { name: 'Color', values: draft.colors },
+      { name: 'Colour', values: draft.colors },
       { name: 'Size', values: draft.sizes },
     ],
     variants: variantsWithImages,
