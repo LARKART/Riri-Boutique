@@ -14,16 +14,47 @@
 
 /** Curated brand-style pool. Extend freely; the synthesizer covers overflow. */
 export const NAME_POOL = [
+  // Original set.
   'Serane', 'Elowen', 'Marielle', 'Avora', 'Celina', 'Evadra', 'Lirelle', 'Noemi',
   'Calla', 'Vesper', 'Ondine', 'Amaris', 'Sorrel', 'Thalia', 'Maren', 'Linnea',
   'Cosette', 'Delphine', 'Isolde', 'Rhea', 'Mirabel', 'Yvaine', 'Solene', 'Anouk',
   'Verena', 'Avelline', 'Maevelle', 'Calienne', 'Verelle', 'Avorelle', 'Vesperly',
   'Sabine', 'Elise', 'Romy', 'Odette', 'Margaux', 'Colette', 'Lucienne', 'Aveline',
+  // Widened set — elegant women's first names so new products get real-sounding,
+  // unique names (no numbered synthesis) even with a large store already reserved.
+  'Lysandra', 'Sloane', 'Seraphine', 'Vivienne', 'Genevieve', 'Ottoline', 'Rosalind',
+  'Clementine', 'Arabella', 'Cordelia', 'Evangeline', 'Florentine', 'Hermione',
+  'Isadora', 'Josephine', 'Katarina', 'Leonora', 'Marguerite', 'Nicolette', 'Octavia',
+  'Persephone', 'Rosamund', 'Seraphina', 'Theodora', 'Valentina', 'Wilhelmina',
+  'Ximena', 'Yolanda', 'Zinnia', 'Adeline', 'Bellamy', 'Camille', 'Daphne', 'Eloise',
+  'Fleur', 'Giselle', 'Helene', 'Iris', 'Juliette', 'Coralie', 'Liliane', 'Manon',
+  'Noelle', 'Oceane', 'Pauline', 'Sylvie', 'Therese', 'Ursule', 'Violette', 'Capucine',
+  'Amandine', 'Bernadette', 'Charlotte', 'Delphina', 'Emmeline', 'Faustine', 'Ghislaine',
+  'Honorine', 'Ines', 'Jacqueline', 'Leonie', 'Mathilde', 'Ninon', 'Ombeline',
+  'Philippine', 'Rosalie', 'Salome', 'Tiphaine', 'Apolline', 'Blandine', 'Clarisse',
+  'Domitille', 'Eugenie', 'Sidonie', 'Albane', 'Berenice', 'Astrid', 'Beatrix', 'Clio',
+  'Dahlia', 'Edith', 'Freya', 'Greer', 'Hazel', 'Imogen', 'Juno', 'Lark', 'Maeve',
+  'Nova', 'Opal', 'Pearl', 'Quinn', 'Saffron', 'Tamsin', 'Verity', 'Wren', 'Briony',
+  'Esme', 'Flora', 'Cleo', 'Saoirse', 'Niamh', 'Orla', 'Sinead', 'Aoife', 'Maelys',
+  'Sienna', 'Elara', 'Lyra', 'Selene', 'Calliope', 'Thessaly', 'Ariadne', 'Cassia',
+  'Delia', 'Eulalia', 'Ianthe', 'Lavinia', 'Ottilie', 'Rosaline', 'Sabella', 'Tindra',
+  'Amelie', 'Brigitte', 'Celestine', 'Donatella', 'Elodie', 'Francine', 'Gwendolyn',
+  'Heloise', 'Ilaria', 'Joelle', 'Karenza', 'Lisette', 'Mireille', 'Nerissa', 'Oriane',
+  'Primrose', 'Reverie', 'Susannah', 'Tatiana', 'Ursula', 'Vespera', 'Willa', 'Zelda',
+  'Anaelle', 'Bastienne', 'Cosima', 'Dorothea', 'Emelina', 'Felicienne', 'Galatea',
+  'Hyacinth', 'Isaline', 'Jessamine', 'Leontine', 'Magdalene', 'Noeline', 'Oceania',
+  'Pomeline', 'Rosanna', 'Severine', 'Apollina', 'Vianne', 'Albertine', 'Cunera',
 ];
 
 const SYNTH_PREFIXES = ['Av', 'Ser', 'Mar', 'Cel', 'Ev', 'Lir', 'No', 'Cal', 'Ves', 'Ond',
-  'Am', 'Sor', 'Tha', 'Lin', 'Cos', 'Del', 'Iso', 'Rhe', 'Mir', 'Sol'];
-const SYNTH_SUFFIXES = ['elle', 'ine', 'ora', 'ina', 'enne', 'aris', 'ela', 'ette', 'ana', 'een'];
+  'Am', 'Sor', 'Tha', 'Lin', 'Cos', 'Del', 'Iso', 'Rhe', 'Mir', 'Sol',
+  'Ad', 'Ly', 'Sab', 'Vi', 'Rom', 'Od', 'Col', 'Luc', 'Bri', 'Es',
+  'Ari', 'Na', 'Per', 'Sen', 'Ros', 'El', 'Cla', 'Fel', 'Gen', 'Hel',
+  'Ire', 'Jul', 'Lor', 'Mae', 'Nor', 'Ophe', 'Ren', 'Syl', 'Tess', 'Val',
+  'Wil', 'Yse', 'Zel', 'Ana', 'Cor', 'Dor', 'Eme', 'Flo', 'Gis', 'Lis'];
+const SYNTH_SUFFIXES = ['elle', 'ine', 'ora', 'ina', 'enne', 'aris', 'ela', 'ette', 'ana', 'een',
+  'etta', 'elia', 'iane', 'ienne', 'lyn', 'sande', 'rine', 'lise', 'wen', 'ssa',
+  'ique', 'eline', 'antha', 'andra', 'essa', 'olene', 'avine', 'overa', 'iana', 'oise'];
 
 /**
  * Deterministically synthesize a brand-style name for index i. UNBOUNDED: after
