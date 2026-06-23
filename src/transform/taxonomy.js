@@ -17,6 +17,8 @@ export const SWIMWEAR_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-20';
 export const SANDALS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-8-6';
 export const SHOES_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-8';
 export const SHORTS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-14';
+export const PANTS_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-12';
+export const SKIRT_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-15';
 export const BLOUSE_CATEGORY_GID = 'gid://shopify/TaxonomyCategory/aa-1-13-1';
 
 const TAXONOMY_SEARCH = `
@@ -50,6 +52,10 @@ export async function resolveCategory(draft, gql = shopifyGraphQL) {
     return { id: draft.footwearCategoryId || SHOES_CATEGORY_GID, fullName: 'Apparel & Accessories > Shoes' };
   }
   if (draft.isShorts) return { id: SHORTS_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Shorts' };
+  // Bottoms: Pants/Skirts use their fixed apparel nodes (the dynamic lookup would
+  // mis-pick "Chef Pants" etc.), never the Dresses category.
+  if (draft.isPants) return { id: draft.pantsCategoryId || PANTS_CATEGORY_GID, fullName: draft.pantsCategoryId ? 'Apparel & Accessories > Clothing > Pants > Jeans' : 'Apparel & Accessories > Clothing > Pants' };
+  if (draft.isSkirt) return { id: SKIRT_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Skirts' };
   if (draft.isTop) return { id: BLOUSE_CATEGORY_GID, fullName: 'Apparel & Accessories > Clothing > Clothing Tops > Blouses' };
   // Two-piece outfits / sets (and rompers grouped with them) use Outfit Sets,
   // never the Dresses category.

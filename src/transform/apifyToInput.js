@@ -100,6 +100,48 @@ function detectShorts(text) {
   return `${styles.length ? styles.join(' ') + ' ' : ''}Shorts`;
 }
 
+/**
+ * Pants garment-type noun with style baked in (style only when the source says
+ * so — never invented). The base noun stays "Pants" unless the source clearly
+ * names a different bottom (Leggings/Trousers/Culottes/Joggers/Palazzo).
+ */
+function detectPants(text) {
+  const t = String(text || '');
+  // Jeans are denim pants — keep the precise noun ("Jeans") so the title and the
+  // GMC category (Pants > Jeans) are accurate.
+  const noun = /\bjeans?\b/i.test(t) ? 'Jeans'
+    : /\bleggings?\b/i.test(t) ? 'Leggings'
+    : /\bculottes?\b/i.test(t) ? 'Culottes'
+    : /\bjoggers?\b/i.test(t) ? 'Joggers'
+    : /\bpalazzo\b/i.test(t) ? 'Palazzo Pants'
+    : /\btrousers?\b/i.test(t) ? 'Trousers'
+    : 'Pants';
+  const STYLE_RES = [['Wide Leg', /\bwide[-\s]?leg\b/i], ['Straight Leg', /\bstraight[-\s]?leg\b/i],
+    ['Barrel Leg', /\bbarrel[-\s]?leg\b/i], ['Bootcut', /\bboot[-\s]?cut\b/i], ['Skinny', /\bskinny\b/i],
+    ['Flare', /\bflare(d)?\b/i], ['Tapered', /\btapered\b/i], ['Distressed', /\bdistressed\b/i],
+    ['Cargo', /\bcargo\b/i], ['Pleated', /\bpleated\b/i], ['High Waist', /\bhigh[-\s]?waist(ed)?\b/i],
+    ['Cropped', /\bcropped?\b/i], ['Paperbag', /\bpaper[-\s]?bag\b/i], ['Linen', /\blinen\b/i],
+    ['Mom', /\bmom\b/i], ['Boyfriend', /\bboyfriend\b/i], ['Denim', /\bdenim\b/i],
+    ['Drawstring', /\bdrawstring\b/i], ['Tailored', /\btailored\b/i], ['Capri', /\bcapri\b/i]];
+  let styles = STYLE_RES.filter(([, re]) => re.test(t)).map(([c]) => c);
+  // "Denim" is redundant once the noun is "Jeans"; drop any style already in the noun.
+  styles = styles.filter((s) => !noun.toLowerCase().includes(s.toLowerCase()) && !(noun === 'Jeans' && s === 'Denim')).slice(0, 2);
+  return `${styles.length ? styles.join(' ') + ' ' : ''}${noun}`;
+}
+
+/** Skirt garment-type noun with style baked in (style only when source says so).
+ * Maxi/Midi/Mini here are skirt STYLES baked into the noun, not a dress length. */
+function detectSkirt(text) {
+  const t = String(text || '');
+  const STYLE_RES = [['Maxi', /\bmaxi\b/i], ['Midi', /\bmidi\b/i], ['Mini', /\bmini\b/i],
+    ['Pleated', /\bpleated\b/i], ['A-Line', /\ba[-\s]?line\b/i], ['Wrap', /\bwrap\b/i],
+    ['Pencil', /\bpencil\b/i], ['Tiered', /\btiered\b/i], ['Ruffle', /\bruffle(d)?\b/i],
+    ['Denim', /\bdenim\b/i], ['Satin', /\bsatin\b/i], ['Linen', /\blinen\b/i], ['Cargo', /\bcargo\b/i],
+    ['Asymmetric', /\basymmetric(al)?\b/i], ['High Waist', /\bhigh[-\s]?waist(ed)?\b/i]];
+  const styles = STYLE_RES.filter(([, re]) => re.test(t)).map(([c]) => c).slice(0, 2);
+  return `${styles.length ? styles.join(' ') + ' ' : ''}Skirt`;
+}
+
 // Honest occasion tags for the custom.occasion metafield (internal filtering).
 // Only genuine source signals — never inferred/bulk-applied (GMC guardrail).
 const OCCASION_TAG_RES = [['wedding guest', /\bwedding\s*guest\b/i], ['wedding', /\bwedding\b/i], ['bridesmaid', /\bbridesmaid\b/i],
@@ -196,7 +238,13 @@ export function mapApifyToInput(raw, opts = {}) {
   const otherText = `${raw.title || ''} ${typeStr}`;
   // "shorts" (plural garment) only — must NOT match "short sleeve".
   const isShorts = !isDress && !isSwim && !isFootwear && !isSet && /\bshorts\b/i.test(otherText);
-  const isTop = !isDress && !isSwim && !isFootwear && !isSet && !isShorts &&
+  // Bottoms: pants/trousers/leggings/etc. and skirts — their own Bottoms taxonomy
+  // nodes (never aa-1-4), no dress length, garment-type noun stands in the title.
+  const isPants = !isDress && !isSwim && !isFootwear && !isSet && !isShorts &&
+    /\b(pants?|trousers?|leggings?|culottes?|joggers?|palazzo|jeans?)\b/i.test(otherText);
+  const isSkirt = !isDress && !isSwim && !isFootwear && !isSet && !isShorts && !isPants &&
+    /\bskirts?\b/i.test(otherText);
+  const isTop = !isDress && !isSwim && !isFootwear && !isSet && !isShorts && !isPants && !isSkirt &&
     /\b(blouse|shirt|tops?|tee|t[-\s]?shirt|tank|cami(?:sole)?|tunic|peplum|bodysuit|crop\s*top)\b/i.test(otherText);
   const swim = isSwim ? detectSwimType(`${raw.title || ''} ${typeStr}`) : null;
   const foot = isFootwear ? detectFootwear(`${raw.title || ''} ${typeStr} ${tagStr}`) : null;
@@ -205,6 +253,8 @@ export function mapApifyToInput(raw, opts = {}) {
     : isFootwear ? foot.noun
     : isSet ? detectSetType(raw.title)
     : isShorts ? detectShorts(otherText)
+    : isPants ? detectPants(otherText)
+    : isSkirt ? detectSkirt(otherText)
     : isTop ? 'Blouse'
     : (raw.productType || (Array.isArray(raw.tags) ? raw.tags[0] : undefined) || 'Product');
 
@@ -265,7 +315,7 @@ export function mapApifyToInput(raw, opts = {}) {
   // and clothing attributes (neckline/silhouette/length) don't apply to shoes.
   const attributes = {};
   let occasion = null;
-  if (!isFootwear && !isShorts) {
+  if (!isFootwear && !isShorts && !isPants && !isSkirt) {
     // Length inference from the source title (spec §5.1/§12). If none is found the
     // title builder fails the product downstream — a length is never omitted.
     const length = detectLength(raw.title) ||
@@ -295,6 +345,8 @@ export function mapApifyToInput(raw, opts = {}) {
   if (isSwim) { input.isSwim = true; input.swimCategoryId = swim.cat; }
   if (isFootwear) { input.isFootwear = true; input.footwearCategoryId = foot.cat; }
   if (isShorts) input.isShorts = true;
+  if (isPants) { input.isPants = true; if (/\bjeans?\b/i.test(otherText)) input.pantsCategoryId = 'gid://shopify/TaxonomyCategory/aa-1-12-4'; }
+  if (isSkirt) input.isSkirt = true;
   if (isTop) input.isTop = true;
   // Honest occasion tags (caller context + source title/tags) for custom.occasion.
   const occTags = uniq([...(occasionTags || []), ...detectOccasionTags(`${raw.title || ''} ${tagStr}`)]);

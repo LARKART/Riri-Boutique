@@ -73,8 +73,8 @@ export async function buildProductDraft(input, deps = {}) {
   // Never ship an empty SEO title — fall back to the keyword-first product title.
   if (!content.seo) content.seo = {};
   if (!String(content.seo.title || '').trim()) content.seo.title = title;
-  // Footwear / shorts / blouses: SEO title mirrors the product title exactly.
-  if (draft.isFootwear || draft.isShorts || draft.isTop) content.seo.title = title;
+  // Footwear / shorts / pants / skirts / blouses: SEO title mirrors the product title exactly.
+  if (draft.isFootwear || draft.isShorts || draft.isPants || draft.isSkirt || draft.isTop) content.seo.title = title;
   const variants = buildVariants(draft, { fx: deps.fx || buildFxFromEnv() });
 
   // Stage 5 — taxonomy + GMC feed fields (pattern + inferred base color for prints).
@@ -99,6 +99,8 @@ export async function buildProductDraft(input, deps = {}) {
     isSwim: draft.isSwim,
     isFootwear: draft.isFootwear,
     isShorts: draft.isShorts,
+    isPants: draft.isPants,
+    isSkirt: draft.isSkirt,
     isTop: draft.isTop,
     occasionTags: draft.occasionTags,
     descriptionHtml: content.descriptionHtml,

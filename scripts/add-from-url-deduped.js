@@ -196,7 +196,7 @@ for (const { raw, url } of items) {
   // Pollution filter: drop products that aren't the expected kind (e.g. a slipper
   // in a Blouses source). Reported so nothing slips through silently.
   if (requireKind) {
-    const kind = { top: input.isTop, shorts: input.isShorts, dress: input.isDress, set: input.isSet, swim: input.isSwim, footwear: input.isFootwear }[requireKind];
+    const kind = { top: input.isTop, shorts: input.isShorts, pants: input.isPants, skirt: input.isSkirt, dress: input.isDress, set: input.isSet, swim: input.isSwim, footwear: input.isFootwear }[requireKind];
     if (!kind) { skipped.push({ raw, url, reason: `not a ${requireKind} (source pollution; detected "${input.productType}")` }); stat.skipped++; continue; }
   }
 

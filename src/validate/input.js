@@ -17,7 +17,7 @@ const CURRENCIES = new Set(['CAD', 'USD']);
 const STORE_CURRENCY = 'CAD'; // confirmed via get-shop-info
 const KNOWN_KEYS = new Set([
   'sourceCurrency', 'sourcePrice', 'productType', 'isDress', 'isSet', 'isSwim',
-  'swimCategoryId', 'isFootwear', 'footwearCategoryId', 'isShorts', 'isTop', 'name', 'productCode', 'group',
+  'swimCategoryId', 'isFootwear', 'footwearCategoryId', 'isShorts', 'isPants', 'pantsCategoryId', 'isSkirt', 'isTop', 'name', 'productCode', 'group',
   'attributes', 'colors', 'sizes', 'variantOverrides', 'images', 'referenceUrl',
   'descriptionInput', 'pattern', 'feedColor', 'occasionTags',
 ]);
