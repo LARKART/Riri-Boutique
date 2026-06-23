@@ -21,8 +21,10 @@ import { normalizePattern, inferBaseColor } from '../normalize/patterns.js';
 const NECKLINES = ['One Shoulder', 'Off Shoulder', 'Off-Shoulder', 'V Neck', 'V-Neck', 'Square Neck',
   'Halter', 'Sweetheart', 'Cowl Neck', 'Cowl', 'Strapless', 'Scoop Neck', 'Boat Neck', 'High Neck',
   'Mock Neck', 'Turtleneck', 'Crew Neck', 'Round Neck'];
-const SLEEVES = ['Long Sleeve', 'Short Sleeve', 'Cap Sleeve', 'Puff Sleeve', 'Sleeveless'];
-const SILHOUETTES = ['A-Line', 'Bodycon', 'Slip', 'Wrap', 'Pleated', 'Draped', 'Mermaid', 'Fit and Flare', 'Tiered'];
+const SLEEVES = ['Long Sleeve', 'Short Sleeve', 'Cap Sleeve', 'Puff Sleeve', '3/4 Sleeve',
+  'Ruffle Sleeve', 'Bell Sleeve', 'Flutter Sleeve', 'Wide Sleeve', 'Sleeveless'];
+const SILHOUETTES = ['A-Line', 'Bodycon', 'Slip', 'Wrap', 'Pleated', 'Draped', 'Mermaid', 'Fit and Flare', 'Tiered',
+  'Button Down', 'Button Up', 'Collared', 'Smocked', 'Tie Front', 'Peplum', 'Cutout', 'Push Up', 'Cross Front', 'Ruched'];
 const OCCASIONS = [['wedding guest', 'Wedding Guest'], ['bridesmaid', 'Bridesmaid'], ['cocktail', 'Cocktail'],
   ['formal', 'Formal'], ['prom', 'Prom'], ['party', 'Party'], ['vacation', 'Vacation'], ['evening', 'Evening']];
 
@@ -66,13 +68,23 @@ function detectFootwear(text) {
     : /(heels?|pumps?)/i.test(t) ? { n: 'Heels', cat: 'aa-8-10' }
     : { n: 'Shoes', cat: 'aa-8' };
   const STYLE_RES = [['Platform', /\bplatform\b/i], ['Wedge', /\bwedges?\b/i], ['Block Heel', /\bblock\s*heel\b/i],
-    ['Stiletto', /\bstiletto\b/i], ['Kitten Heel', /\bkitten\b/i], ['Pointed Toe', /\bpointed(\s*toe)?\b/i],
-    ['Almond Toe', /\balmond\s*toe\b/i], ['Round Toe', /\bround\s*toe\b/i], ['Open Toe', /\bopen\s*toe\b/i],
-    ['Cap Toe', /\bcap\s*toe\b/i], ['Slingback', /\bslingback\b/i], ['Ankle Strap', /\bankle[-\s]?strap\b/i],
-    ['T-Strap', /\bt[-\s]?strap\b/i], ['Strappy', /\bstrappy\b/i], ['Lace Up', /\blace[-\s]?up\b/i],
-    ['Slip On', /\bslip[-\s]?on\b/i], ['Buckle', /\bbuckle\b/i], ['Bow', /\bbow\b/i], ['Chunky', /\bchunky\b/i],
-    ['Knit', /\bknit\b/i], ['Ballet', /\bballet\b/i], ['Espadrille', /\bespadrilles?\b/i],
-    ['Gladiator', /\bgladiator\b/i], ['Thong', /\bthong\b/i], ['Mule', /\bmules?\b/i], ['Slide', /\bslides?\b/i]];
+    ['Stiletto', /\bstiletto\b/i], ['Kitten Heel', /\bkitten\b/i], ['Low Heel', /\blow[-\s]?heel\b/i],
+    ['Pointed Toe', /\bpointed(\s*toe)?\b/i], ['Almond Toe', /\balmond\s*toe\b/i], ['Round Toe', /\bround\s*toe\b/i],
+    ['Square Toe', /\bsquare\s*toe\b/i], ['Open Toe', /\bopen\s*toe\b/i], ['Closed Toe', /\bclosed\s*toe\b/i],
+    ['Cap Toe', /\bcap\s*toe\b/i], ['T-Bar', /\bt[-\s]?bar\b/i], ['T-Strap', /\bt[-\s]?strap\b/i],
+    ['Slingback', /\bslingback\b/i], ['Ankle Strap', /\bankle[-\s]?strap\b/i], ['Cross Strap', /\bcross[-\s]?strap\b/i],
+    ['Double Strap', /\bdouble[-\s]?strap\b/i], ['Adjustable Strap', /\badjustable[-\s]?strap\b/i],
+    ['Strappy', /\bstrappy\b/i], ['Lace Up', /\blace[-\s]?up\b/i], ['Slip On', /\bslip[-\s]?on\b/i],
+    ['Zip Up', /\bzip[-\s]?up\b/i], ['Buckle', /\bbuckle\b/i], ['Chain', /\bchain\b/i], ['Brogue', /\bbrogue\b/i],
+    ['Tassel', /\btassel\b/i], ['Woven', /\bwoven\b/i], ['Braided', /\bbraided\b/i], ['Cutout', /\bcut[-\s]?out\b/i],
+    ['Embroidered', /\bembroidered\b/i], ['Glitter', /\bglitter\b/i], ['Rhinestone', /\brhinestone\b/i],
+    ['Bow', /\bbow\b/i], ['Chunky', /\bchunky\b/i], ['Knit', /\bknit\b/i], ['Ballet', /\bballet\b/i],
+    ['Espadrille', /\bespadrilles?\b/i], ['Gladiator', /\bgladiator\b/i], ['Fisherman', /\bfisherman\b/i],
+    ['Thong', /\bthong\b/i], ['Mule', /\bmules?\b/i], ['Slide', /\bslides?\b/i], ['Two Tone', /\btwo[-\s]?tone\b/i],
+    ['Leather', /\bleather\b/i], ['Starfish', /\bstarfish\b/i], ['Arch Support', /\barch[-\s]?support\b/i],
+    ['Cushioned', /\bcushion(ed)?\b/i], ['Sport', /\bsport\b/i], ['Athletic', /\bathletic\b/i],
+    ['Running', /\brunning\b/i], ['Walking', /\bwalking\b/i], ['Low Top', /\blow[-\s]?top\b/i],
+    ['Retro', /\bretro\b/i], ['Casual', /\bcasual\b/i], ['Comfort', /\bcomfort\b/i]];
   let styles = STYLE_RES.filter(([, re]) => re.test(t)).map(([c]) => c);
   // Drop a style word that already IS the garment noun (e.g. "Slide" for Slides,
   // "Mule" for Mules) so we don't get "Slide Slides".
@@ -415,9 +427,9 @@ export function mapApifyToInput(raw, opts = {}) {
       input.feedColor = inferBaseColor(`${raw.title || ''} ${tagStr} ${raw.body_html || ''}`);
       notes.push(`Pattern-only color (${input.pattern}); storefront keeps the pattern label, feed color inferred as "${input.feedColor}".`);
       // Single-print style (every colorway is the same print): put the print in
-      // the title (e.g. "Camouflage Bikini Set"). Never when prints mix with
-      // solids (GMC misrepresentation risk) — that's the hasRealColor branch.
-      if (isSwim && patterns.length === 1) input.productType = `${patterns[0]} ${input.productType}`;
+      // the title (e.g. "Camouflage Bikini Set", "Leopard Print Loafers"). Never
+      // when prints mix with solids (GMC misrepresentation risk) — hasRealColor branch.
+      if ((isSwim || isFootwear) && patterns.length === 1) input.productType = `${patterns[0]} ${input.productType}`;
     } else {
       notes.push(`Pattern value(s) ${input.pattern} kept as variant(s) alongside real colors; feed pattern set.`);
     }
