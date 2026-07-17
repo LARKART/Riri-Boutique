@@ -1,0 +1,18 @@
+{
+  "name": "advisor-leads",
+  "version": "1.0.0",
+  "description": "US financial advisor YouTube lead database pipeline (free APIs only)",
+  "type": "module",
+  "engines": {
+    "node": ">=20.6"
+  },
+  "scripts": {
+    "seed": "node --env-file=.env src/stage0-seed.js",
+    "match": "node --env-file=.env src/stage1-match.js",
+    "discover": "node --env-file=.env src/stage1-discover.js",
+    "enrich": "node --env-file=.env src/stage2-enrich.js",
+    "finalize": "node --env-file=.env src/stage3-finalize.js",
+    "export": "node --env-file=.env src/stage4-export.js",
+    "pipeline": "node --env-file=.env src/pipeline.js"
+  }
+}
