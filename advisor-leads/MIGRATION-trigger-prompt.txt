@@ -1,0 +1,8 @@
+Daily advisor-leads pipeline run (recreated prompt; original file was missing from the migration bundle).
+
+Work in /home/user/Riri-Boutique/advisor-leads. Run the daily iteration:
+1. npm run match    — Stage 1 firm→YouTube matching (quota-gated, ~90 firms/day; resumes from data/stage1-match-progress.jsonl)
+2. npm run enrich && npm run finalize && npm run export — enrich new rows, SEC-verify, dedupe, export to data/advisor-leads.csv and sync the Google Sheet (tab "Leads").
+3. Report: new channels matched today, total rows in advisor-leads.csv, and how many have needs_review:false.
+4. Goal: 2,000 verified leads. When data/advisor-leads.csv reaches 2,000+ rows with needs_review:false, disable this Routine (list_triggers → update_trigger enabled:false) and tell the user the target is reached.
+Follow the data-quality rules in CLAUDE.md — never fabricate or guess fields. If a stage fails (quota exhausted, network blocked), log it and stop for the day; do not bypass budget guards.
