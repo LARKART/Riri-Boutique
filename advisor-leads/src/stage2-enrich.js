@@ -21,9 +21,12 @@ const ytInfo = new Map(); // channelUrl (lowercased) -> actor item
 
 if (APIFY_TOKEN && YT_ACTOR) {
   const pending = channels.filter((c) => !done.has(c.channelId));
-  console.log(`Apify YT email scraper: querying ${pending.length} channels in batches of 100`);
-  for (let i = 0; i < pending.length; i += 100) {
-    const batch = pending.slice(i, i + 100);
+  // Batches of 20 with actor concurrency 10 stay well inside the 300s
+  // run-sync window (100-channel batches time out).
+  const BATCH = 20;
+  console.log(`Apify YT email scraper: querying ${pending.length} channels in batches of ${BATCH}`);
+  for (let i = 0; i < pending.length; i += BATCH) {
+    const batch = pending.slice(i, i + BATCH);
     try {
       const items = await fetchJson(
         `${APIFY_BASE}/v2/acts/${encodeURIComponent(YT_ACTOR)}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=300`,
@@ -31,7 +34,7 @@ if (APIFY_TOKEN && YT_ACTOR) {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           // datascoutapi/youtube-channel-email-scraper input: handles or URLs.
-          body: JSON.stringify({ handles: batch.map((c) => c.channelUrl) }),
+          body: JSON.stringify({ handles: batch.map((c) => c.channelUrl), concurrency: 10 }),
         }, 1,
       );
       await bumpMonthlyUsage('apify_yt_channels', batch.length);
@@ -47,6 +50,11 @@ if (APIFY_TOKEN && YT_ACTOR) {
       console.log(`  batch ${i / 100 + 1}: ${Array.isArray(items) ? items.length : 0} results`);
     } catch (err) {
       console.warn(`  Apify YT batch failed: ${err.message.slice(0, 100)} — falling back to API-description data for these`);
+      // Account-level hard limit: no point retrying further batches this run.
+      if (/Monthly usage hard limit|platform-feature-disabled/i.test(err.message)) {
+        console.warn('  Apify monthly usage limit reached — skipping remaining batches');
+        break;
+      }
     }
     await sleep(500);
   }
