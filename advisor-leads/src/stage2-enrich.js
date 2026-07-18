@@ -30,7 +30,8 @@ if (APIFY_TOKEN && YT_ACTOR) {
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ channels: batch.map((c) => c.channelUrl) }),
+          // datascoutapi/youtube-channel-email-scraper input: handles or URLs.
+          body: JSON.stringify({ handles: batch.map((c) => c.channelUrl) }),
         }, 1,
       );
       await bumpMonthlyUsage('apify_yt_channels', batch.length);
@@ -40,6 +41,8 @@ if (APIFY_TOKEN && YT_ACTOR) {
         // Also index by handle/channel id so URL-format differences still match.
         const id = it.channelId || it.channel_id || null;
         if (id) ytInfo.set(id, it);
+        const handle = (it.handle || '').toLowerCase().replace(/^@/, '');
+        if (handle) ytInfo.set(`https://www.youtube.com/@${handle}`, it);
       }
       console.log(`  batch ${i / 100 + 1}: ${Array.isArray(items) ? items.length : 0} results`);
     } catch (err) {
@@ -129,9 +132,10 @@ for (const ch of channels) {
     ? (yt.business_email || yt.businessEmail
        || (Array.isArray(yt.emails) ? yt.emails[0] : yt.emails) || yt.email || null)
     : null;
-  const ytSocials = yt
-    ? [].concat(yt.social_links || yt.socialLinks || yt.links || []).map((s) => (typeof s === 'string' ? s : s?.url || '')).filter(Boolean)
-    : [];
+  // social_links may be an object ({facebook: url, ...}) or an array.
+  const rawSocials = yt ? (yt.social_links || yt.socialLinks || yt.links || []) : [];
+  const ytSocials = (Array.isArray(rawSocials) ? rawSocials : Object.values(rawSocials))
+    .map((s) => (typeof s === 'string' ? s : s?.url || '')).filter(Boolean);
   const ytSite = ytSocials.find((u) => { try { return !SOCIAL_HOSTS.test(new URL(u).hostname); } catch { return false; } }) || null;
 
   // Prefer the SEC-registered website for seeded firms; fall back to links in
