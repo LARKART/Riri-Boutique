@@ -75,13 +75,16 @@ const CITY_STATE_RE = /([A-Z][a-zA-Z.\s]{2,25}),\s*(AL|AK|AZ|AR|CA|CO|CT|DE|FL|G
 const JUNK_EMAIL = /\.(png|jpg|jpeg|gif|webp|svg)$|@(example|sentry|wixpress|godaddy|squarespace|2x)\b|noreply|no-reply|@youtube\.com/i;
 
 const SOCIAL_HOSTS = /youtube\.com|youtu\.be|facebook\.com|instagram\.com|twitter\.com|x\.com|tiktok\.com|linkedin\.com|linktr\.ee|calendly\.com|spotify\.com|apple\.com|patreon\.com|amazon\.com|bit\.ly/i;
+// Job boards / review / directory aggregators sometimes appear in the SEC
+// "website" field but are never the firm's own domain — skip them.
+const NON_FIRM_HOSTS = /indeed\.com|glassdoor\.com|ziprecruiter\.com|yelp\.com|bbb\.org|mapquest\.com|yellowpages\.com|crunchbase\.com|zoominfo\.com|manta\.com|google\.com\/maps|goo\.gl/i;
 
 function extractWebsite(description) {
   const urls = description.match(/https?:\/\/[^\s"'<>)\]]+/g) || [];
   for (const u of urls) {
     try {
       const parsed = new URL(u);
-      if (!SOCIAL_HOSTS.test(parsed.hostname)) return `${parsed.protocol}//${parsed.hostname}`;
+      if (!SOCIAL_HOSTS.test(parsed.hostname) && !NON_FIRM_HOSTS.test(parsed.hostname)) return `${parsed.protocol}//${parsed.hostname}`;
     } catch { /* skip */ }
   }
   return null;
@@ -151,9 +154,17 @@ for (const ch of channels) {
   let seedSite = null;
   if (ch.seedFirm?.website) {
     try {
-      const u = new URL(/^https?:/.test(ch.seedFirm.website) ? ch.seedFirm.website : `https://${ch.seedFirm.website}`);
-      // Some firms register a social profile as their website — skip those.
-      if (!SOCIAL_HOSTS.test(u.hostname)) seedSite = `${u.protocol.toLowerCase()}//${u.hostname.toLowerCase()}`;
+      // Case-insensitive scheme test: SEC records often store the URL
+      // upper-cased (e.g. HTTP://WWW.FIRM.COM). Without the `i` flag the
+      // scheme check fails and `https://` gets prepended, yielding
+      // `https://HTTP://…` whose hostname parses as bare "http".
+      const raw = ch.seedFirm.website.trim();
+      const u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+      // Skip social profiles and non-firm aggregator/directory pages (a
+      // firm's real domain — never indeed.com/glassdoor/yelp, etc.).
+      if (!SOCIAL_HOSTS.test(u.hostname) && !NON_FIRM_HOSTS.test(u.hostname)) {
+        seedSite = `${u.protocol.toLowerCase()}//${u.hostname.toLowerCase()}`;
+      }
     } catch { /* malformed registered URL */ }
   }
   const website = seedSite || extractWebsite(ch.description) || ytSite;
