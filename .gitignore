@@ -12,3 +12,7 @@ logs/
 
 # Generated reports (contain sales figures and supplier cost prices)
 *.pdf
+
+# Customer exports (personal data — never commit)
+aria-customer*.csv
+*-customers-*.csv
