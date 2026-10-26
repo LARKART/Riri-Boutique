@@ -9,3 +9,6 @@ npm-debug.log*
 
 # Pilot run logs (may contain store/product IDs)
 logs/
+
+# Generated reports (contain sales figures and supplier cost prices)
+*.pdf
