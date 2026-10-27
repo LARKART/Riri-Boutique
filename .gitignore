@@ -19,3 +19,7 @@ aria-customer*.csv
 
 # Store backups (contain store and product IDs)
 BACKUP-*.json
+
+# Clone/migration artifacts (store-specific working output)
+ONTBREKENDE-*
+CLONE-*
