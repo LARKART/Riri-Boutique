@@ -16,3 +16,6 @@ logs/
 # Customer exports (personal data — never commit)
 aria-customer*.csv
 *-customers-*.csv
+
+# Store backups (contain store and product IDs)
+BACKUP-*.json
