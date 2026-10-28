@@ -10,16 +10,12 @@ npm-debug.log*
 # Pilot run logs (may contain store/product IDs)
 logs/
 
-# Generated reports (contain sales figures and supplier cost prices)
+# Live store data pulled for analysis — never commit.
+# These exports carry customer personal data, supplier cost prices,
+# per-product revenue and store/product IDs. They are handed to the
+# user directly instead, the same way logs/ is kept out above.
+*.csv
 *.pdf
-
-# Customer exports (personal data — never commit)
-aria-customer*.csv
-*-customers-*.csv
-
-# Store backups (contain store and product IDs)
 BACKUP-*.json
-
-# Clone/migration artifacts (store-specific working output)
-ONTBREKENDE-*
 CLONE-*
+ONTBREKENDE-*
